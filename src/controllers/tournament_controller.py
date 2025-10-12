@@ -365,5 +365,178 @@ class TournamentController(BaseController):
         # Save updated tournament
         self.update_tournament(tournament_name, tournament)
 
+    def get_player_statistics(self, tournament_name: str, player_name: str) -> dict:
+        """
+        Get statistics for a specific player in a tournament.
+        
+        Args:
+            tournament_name (str): The name of the tournament.
+            player_name (str): The name of the player.
+            
+        Returns:
+            dict: Dictionary with player statistics including:
+                - points: Total points scored
+                - games_played: Number of games played
+                - wins: Number of wins
+                - draws: Number of draws
+                - losses: Number of losses
+                - opponents_ratings: List of opponent ratings
+                - average_opponent_rating: Average rating of opponents
+                - performance_rating: Calculated performance rating
+                
+        Raises:
+            ValueError: If tournament or player not found.
+        """
+        tournament = self.get_tournament_by_name(tournament_name)
+        
+        if tournament is None:
+            raise ValueError(f"Tournament '{tournament_name}' not found.")
+        
+        # Find the player
+        player = None
+        for p in tournament.players:
+            if p.name == player_name:
+                player = p
+                break
+        
+        if player is None:
+            raise ValueError(f"Player '{player_name}' not found in tournament.")
+        
+        # Get rating type based on time control
+        rating_type = tournament.time_control.value
+        player_rating = getattr(player.rating, rating_type)
+        
+        # Initialize statistics
+        stats = {
+            'points': 0.0,
+            'games_played': 0,
+            'wins': 0,
+            'draws': 0,
+            'losses': 0,
+            'opponents_ratings': [],
+            'average_opponent_rating': 0,
+            'performance_rating': 0,
+            'rating_change': 0
+        }
+        
+        # Go through all rounds and matches
+        for round_obj in tournament.rounds:
+            for match in round_obj.matches:
+                # Check if player is in this match
+                is_white = match.white.name == player_name
+                is_black = match.black and match.black.name == player_name
+                
+                if not (is_white or is_black):
+                    continue
+                
+                # If opponent is None (BYE), count as win
+                if match.black is None and is_white:
+                    stats['points'] += 1.0
+                    stats['wins'] += 1
+                    stats['games_played'] += 1
+                    continue
+                
+                # Get opponent and their rating
+                opponent = match.black if is_white else match.white
+                opponent_rating = getattr(opponent.rating, rating_type)
+                stats['opponents_ratings'].append(opponent_rating)
+                
+                # If no result yet, skip
+                if match.result is None:
+                    continue
+                
+                stats['games_played'] += 1
+                
+                # Parse result
+                try:
+                    parts = match.result.split('-')
+                    if len(parts) == 2:
+                        white_score = float(parts[0])
+                        black_score = float(parts[1])
+                        
+                        player_score = white_score if is_white else black_score
+                        stats['points'] += player_score
+
+                        # Calculate rating change
+                        qA = 10 ** (player_rating / 400)
+                        qB = 10 ** (opponent_rating / 400)
+                        eA = qA / (qA + qB)
+                        k = 20  # K-factor, can be adjusted
+                        rating_change = k * (player_score - eA)
+                        stats['rating_change'] += rating_change
+                        
+                        # Determine win/draw/loss (for single games)
+                        if white_score == 1.0 and black_score == 0.0:
+                            if is_white:
+                                stats['wins'] += 1
+                            else:
+                                stats['losses'] += 1
+                        elif white_score == 0.0 and black_score == 1.0:
+                            if is_black:
+                                stats['wins'] += 1
+                            else:
+                                stats['losses'] += 1
+                        elif white_score == 0.5 and black_score == 0.5:
+                            stats['draws'] += 1
+                except (ValueError, AttributeError):
+                    pass
+        
+        # Calculate average opponent rating
+        if stats['opponents_ratings']:
+            stats['average_opponent_rating'] = sum(stats['opponents_ratings']) / len(stats['opponents_ratings'])
+        
+        # Calculate performance rating
+        if stats['games_played'] > 0:
+            percentage = stats['points'] / stats['games_played']
+            
+            # Using simplified performance rating calculation
+            # Performance = Average Opponent Rating + 400 * (W - L) / N
+            # Or using percentage: Performance = Avg Opp Rating + dp
+            # Where dp comes from percentage score table
+            
+            if percentage == 1.0:
+                # 100% score
+                stats['performance_rating'] = int(stats['average_opponent_rating'] + 400)
+            elif percentage == 0.0:
+                # 0% score
+                stats['performance_rating'] = int(stats['average_opponent_rating'] - 400)
+            else:
+                # Use simplified formula: dp ≈ -400 * log10((1-p)/p)
+                import math
+                try:
+                    dp = -400 * math.log10((1 - percentage) / percentage)
+                    stats['performance_rating'] = int(stats['average_opponent_rating'] + dp)
+                except (ValueError, ZeroDivisionError):
+                    stats['performance_rating'] = int(stats['average_opponent_rating'])
+
+
+        
+        return stats
+
+    def get_all_players_statistics(self, tournament_name: str) -> list:
+        """
+        Get statistics for all players in a tournament.
+        
+        Args:
+            tournament_name (str): The name of the tournament.
+            
+        Returns:
+            list: List of tuples (player, statistics_dict).
+        """
+        tournament = self.get_tournament_by_name(tournament_name)
+        
+        if tournament is None:
+            raise ValueError(f"Tournament '{tournament_name}' not found.")
+        
+        results = []
+        for player in tournament.players:
+            stats = self.get_player_statistics(tournament_name, player.name)
+            results.append((player, stats))
+        
+        return results
+
+
+
+
 
 

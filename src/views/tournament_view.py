@@ -556,7 +556,7 @@ class TournamentView(BaseView):
                 key=lambda x: (-x['score'], -getattr(x['player'].rating, rating_type))
             )
 
-            self._display_round_rankings(sorted_players, rating_name, round_number, rating_type)
+            self._display_round_rankings_with_stats(tournament, sorted_players, rating_name, round_number, rating_type)
                 
         except Exception as e:
             self.display_error(f"Erro ao visualizar ranking: {str(e)}")
@@ -611,10 +611,61 @@ class TournamentView(BaseView):
             print(f"{i}º lugar - {player.name}")
             print(f"   Pontuação: {score:.1f} pontos ({matches} partidas)")
             print(f"   Rating {rating_name}: {rating_value}")
+            
+            # Try to get performance statistics
+            try:
+                # Get tournament name from context (we'll need to pass it)
+                # For now, we'll calculate a simple performance indicator
+                if matches > 0:
+                    percentage = (score / matches) * 100
+                    print(f"   Performance: {percentage:.1f}%")
+            except Exception:
+                pass
+            
+            print()
+
+    def _display_round_rankings_with_stats(self, tournament, sorted_players, rating_name, round_number, rating_type):
+        """Display round rankings with full statistics including performance rating."""
+        print(f"\nRitmo do torneio: {rating_name}")
+        print(f"Rodadas contabilizadas: 1 até {round_number}")
+        print(f"\n{'='*90}")
+        print(f"RANKING APÓS {round_number}ª RODADA (com estatísticas)")
+        print(f"{'='*90}")
+        print(f"\nTotal de jogadores: {len(sorted_players)}\n")
+
+        for i, data in enumerate(sorted_players, 1):
+            player = data['player']
+            score = data['score']
+            matches = data['matches_played']
+            rating_value = getattr(player.rating, rating_type)
+            
+            print(f"{i}º lugar - {player.name}")
+            print(f"   Pontuação: {score:.1f} pontos ({matches} partidas)")
+            print(f"   Rating {rating_name}: {rating_value}")
+            
+            # Get full statistics
+            try:
+                stats = self.controller.get_player_statistics(tournament.name, player.name)
+                
+                if stats['games_played'] > 0:
+                    percentage = (stats['points'] / stats['games_played']) * 100
+                    print(f"   Performance: {percentage:.1f}%")
+                    print(f"   V/E/D: {stats['wins']}/{stats['draws']}/{stats['losses']}")
+                
+                if stats['average_opponent_rating'] > 0:
+                    print(f"   Rating Médio dos Adversários: {stats['average_opponent_rating']:.0f}")
+                    print(f"   Rating Performance: {stats['performance_rating']}")
+                    print(f"   Ganho Estimado de Rating: {stats['rating_change']:.0f}")
+            except Exception as e:
+                # If stats fail, just show basic info
+                if matches > 0:
+                    percentage = (score / matches) * 100
+                    print(f"   Performance: {percentage:.1f}%")
+            
             print()
 
     def _list_tournament_players(self, tournament):
-        """List all players registered in the tournament."""
+        """List all players registered in the tournament with their statistics."""
         self.clear_screen()
         self.display_separator()
         print("           JOGADORES INSCRITOS NO TORNEIO")
@@ -626,8 +677,22 @@ class TournamentView(BaseView):
             if not players:
                 print("\nNenhum jogador inscrito neste torneio.")
             else:
-                print(f"\nTotal de jogadores inscritos: {len(players)}\n")
+                # Check if there are any rounds (to show statistics)
+                has_rounds = tournament.rounds and len(tournament.rounds) > 0
+                
+                print(f"\nTotal de jogadores inscritos: {len(players)}")
+                
+                if has_rounds:
+                    print("\n(Incluindo estatísticas do torneio)")
+                
+                print()
+                
+                # Get rating type for this tournament
+                rating_type = tournament.time_control.value
+                
                 for i, player in enumerate(players, 1):
+                    current_rating = getattr(player.rating, rating_type)
+                    
                     print(f"{i}. {player.name}")
                     print(f"   Data de Nascimento: {player.birthdate}")
                     print(f"   Gênero: {player.gender}")
@@ -635,6 +700,27 @@ class TournamentView(BaseView):
                     print(f"     - Clássico: {player.rating.classic}")
                     print(f"     - Rápido: {player.rating.rapid}")
                     print(f"     - Blitz: {player.rating.blitz}")
+                    
+                    # Show tournament statistics if there are rounds
+                    if has_rounds:
+                        try:
+                            stats = self.controller.get_player_statistics(tournament.name, player.name)
+                            
+                            print(f"   Desempenho no Torneio:")
+                            print(f"     - Pontos: {stats['points']:.1f}/{stats['games_played']}")
+                            print(f"     - Vitórias/Empates/Derrotas: {stats['wins']}/{stats['draws']}/{stats['losses']}")
+                            
+                            if stats['average_opponent_rating'] > 0:
+                                print(f"     - Rating Médio dos Adversários: {stats['average_opponent_rating']:.0f}")
+                                print(f"     - Rating Performance: {stats['performance_rating']}")
+                                
+                                # Calculate rating change (simplified)
+                                rating_change = stats['performance_rating'] - current_rating
+                                change_symbol = "+" if rating_change > 0 else ""
+                                print(f"     - Ganho Estimado de Rating: {change_symbol}{rating_change:.0f}")
+                        except Exception as e:
+                            print(f"     - Estatísticas não disponíveis: {str(e)}")
+                    
                     print()
         except Exception as e:
             self.display_error(f"Erro ao listar jogadores: {str(e)}")
