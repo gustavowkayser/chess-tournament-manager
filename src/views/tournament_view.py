@@ -748,7 +748,11 @@ class TournamentView(BaseView):
                 self.pause()
                 return
 
-            self._annotate_matches_cursor_based(tournament, round_number, matches)
+            # Use different annotation method for eliminatory tournaments
+            if isinstance(tournament, EliminatoryTournament):
+                self._annotate_eliminatory_matches(tournament, round_number, matches)
+            else:
+                self._annotate_matches_cursor_based(tournament, round_number, matches)
 
         except ValueError as e:
             self.display_error(str(e))
@@ -756,6 +760,102 @@ class TournamentView(BaseView):
         except Exception as e:
             self.display_error(f"Erro ao anotar resultados: {str(e)}")
             self.pause()
+
+    def _annotate_eliminatory_matches(self, tournament, round_number, matches):
+        """
+        Annotate results for eliminatory tournament matches using match scores.
+        Format: Player1 X.X - Y.Y Player2 (e.g., Kasparov 2.5 - 1.5 Karpov)
+        """
+        self.clear_screen()
+        self.display_separator()
+        
+        # Get round name
+        bracket_info = self.controller.get_bracket_info(tournament.name)
+        round_name = bracket_info['round_names'].get(round_number, f"Rodada {round_number}")
+        
+        print(f"       ANOTAR RESULTADOS - {round_name.upper()}")
+        self.display_separator()
+        print("\nDigite o placar de cada match no formato: X.X - Y.Y")
+        print("Exemplo: 2.5 - 1.5 (significa que o jogador de brancas venceu 2.5 a 1.5)")
+        print("\nPartidas:\n")
+
+        for i, match in enumerate(matches, 1):
+            print(f"Mesa {i}: {match.white.name} vs {match.black.name if match.black else 'BYE'}")
+            
+            if match.black is None:
+                print(f"  → BYE (vitória automática para {match.white.name})")
+                # Set result as 1-0 for BYE
+                if match.result is None:
+                    self.controller.update_match_result(tournament.name, round_number, i-1, "1-0")
+            else:
+                current_result = self._format_eliminatory_result(match.result)
+                if current_result:
+                    print(f"  → Resultado atual: {current_result}")
+                else:
+                    print(f"  → Sem resultado")
+
+        print("\n" + "="*60)
+        
+        # Annotate each match
+        for i, match in enumerate(matches, 1):
+            if match.black is None:
+                continue  # Skip BYE matches
+            
+            print(f"\nMesa {i}: {match.white.name} vs {match.black.name}")
+            
+            while True:
+                score_input = self.get_input(f"Placar (ou 'pular' para manter resultado atual): ").strip()
+                
+                if score_input.lower() == 'pular':
+                    break
+                
+                # Parse score input (e.g., "2.5 - 1.5" or "2.5-1.5")
+                try:
+                    parts = score_input.replace(" ", "").split("-")
+                    if len(parts) != 2:
+                        self.display_error("Formato inválido! Use: X.X - Y.Y")
+                        continue
+                    
+                    white_score = float(parts[0])
+                    black_score = float(parts[1])
+                    
+                    # Validate scores
+                    if white_score < 0 or black_score < 0:
+                        self.display_error("Pontuações devem ser positivas!")
+                        continue
+                    
+                    # Determine winner and set result
+                    if white_score > black_score:
+                        result = "1-0"
+                        winner = match.white.name
+                    elif black_score > white_score:
+                        result = "0-1"
+                        winner = match.black.name
+                    else:
+                        self.display_error("Não pode haver empate em torneios eliminatórios!")
+                        continue
+                    
+                    # Update match result
+                    self.controller.update_match_result(tournament.name, round_number, i-1, result)
+                    self.display_success(f"✓ {winner} avança (placar: {white_score} - {black_score})")
+                    break
+                    
+                except ValueError:
+                    self.display_error("Formato inválido! Use números decimais (ex: 2.5 - 1.5)")
+                    continue
+        
+        print("\n" + "="*60)
+        self.display_success("Resultados da rodada anotados com sucesso!")
+        self.pause()
+
+    def _format_eliminatory_result(self, result):
+        """Format result for display in eliminatory tournaments."""
+        if result == "1-0":
+            return "Brancas avançam"
+        elif result == "0-1":
+            return "Pretas avançam"
+        else:
+            return None
 
     def _get_round_to_annotate(self, tournament):
         print("\nRodadas disponíveis:")

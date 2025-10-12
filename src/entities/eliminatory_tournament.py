@@ -79,26 +79,68 @@ class EliminatoryTournament(Tournament):
             return pairings
 
         # For subsequent rounds, pair winners from previous round
-        # This would require tracking match results
         else:
-            # Simplified: get players who should still be in tournament
-            # In real implementation, this would filter based on previous round winners
-            rating_type = self.time_control.value
-            sorted_players = sorted(
-                players,
-                key=lambda p: getattr(p.rating, rating_type),
-                reverse=True
-            )
-
-            # Calculate expected number of players for this round
-            expected_players = max(2, 2 ** (max_rounds - round_number + 1))
-            active_players = sorted_players[:min(expected_players, len(sorted_players))]
-
+            # Get the previous round
+            previous_round = self.get_round(round_number - 1)
+            
+            if previous_round is None:
+                raise ValueError(f"Previous round (round {round_number - 1}) must be completed before generating round {round_number}.")
+            
+            # Get winners from previous round
+            winners = []
+            for match in previous_round.matches:
+                winner = self._get_match_winner(match)
+                if winner is None:
+                    raise ValueError(f"All matches in round {round_number - 1} must have results before generating next round.")
+                winners.append(winner)
+            
+            if len(winners) < 2:
+                raise ValueError("At least 2 winners are required to generate next round.")
+            
+            # Pair winners sequentially (winner of match 1 vs winner of match 2, etc.)
             pairings = []
-            for i in range(0, len(active_players) - 1, 2):
-                pairings.append((active_players[i], active_players[i + 1]))
-
+            for i in range(0, len(winners) - 1, 2):
+                pairings.append((winners[i], winners[i + 1]))
+            
             return pairings
+
+    def _get_match_winner(self, match):
+        """
+        Determine the winner of a match based on the result.
+        
+        Args:
+            match: The Game object representing the match.
+            
+        Returns:
+            Player: The winning player, or None if no result.
+        """
+        # If it's a BYE, white advances automatically
+        if match.black is None:
+            return match.white
+        
+        # If no result, can't determine winner
+        if match.result is None:
+            return None
+        
+        # Parse the result to determine winner
+        # Result format: "X-Y" where X is white's score and Y is black's score
+        try:
+            parts = match.result.split('-')
+            if len(parts) != 2:
+                return None
+            
+            white_score = float(parts[0])
+            black_score = float(parts[1])
+            
+            if white_score > black_score:
+                return match.white
+            elif black_score > white_score:
+                return match.black
+            else:
+                # Tie - should not happen in eliminatory, but return None
+                return None
+        except (ValueError, AttributeError):
+            return None
 
     def get_bracket_info(self) -> dict:
         """
