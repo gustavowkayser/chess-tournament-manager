@@ -1,6 +1,7 @@
 from src.entities.tournament import Tournament
 from src.entities.swiss_tournament import SwissTournament
 from src.entities.eliminatory_tournament import EliminatoryTournament
+from src.dtos.player_dto import PlayerDTO
 
 
 class TournamentDTO:
@@ -22,6 +23,7 @@ class TournamentDTO:
             "location": tournament.location,
             "start_date": tournament.start_date,
             "end_date": tournament.end_date,
+            "players": [PlayerDTO.to_dict(player) for player in tournament.players]
         }
 
         # Add type-specific information
@@ -52,10 +54,20 @@ class TournamentDTO:
         start_date = data.get("start_date", "")
         end_date = data.get("end_date", "")
 
+        # Create tournament based on type
         if tournament_type == "swiss":
             rounds = data.get("rounds", 5)
-            return SwissTournament(name, location, start_date, end_date, rounds)
+            tournament = SwissTournament(name, location, start_date, end_date, rounds)
         elif tournament_type == "eliminatory":
-            return EliminatoryTournament(name, location, start_date, end_date)
+            tournament = EliminatoryTournament(name, location, start_date, end_date)
         else:
-            return Tournament(name, location, start_date, end_date)
+            tournament = Tournament(name, location, start_date, end_date)
+
+        # Add players to tournament
+        players_data = data.get("players", [])
+        for player_data in players_data:
+            player = PlayerDTO.from_dict(player_data)
+            tournament.add_player(player)
+
+        return tournament
+

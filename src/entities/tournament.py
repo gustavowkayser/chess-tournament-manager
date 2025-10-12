@@ -70,3 +70,63 @@ class Tournament:
         if not isinstance(value, str) or len(value) != 10 or value[4] != '-' or value[7] != '-':
             raise ValueError("End date must be a string in 'YYYY-MM-DD' format.")
         self.__end_date = value
+
+    @property
+    def players(self) -> list:
+        """Get the list of players in the tournament."""
+        return self.__players.copy()
+
+    def add_player(self, player):
+        """
+        Add a player to the tournament.
+
+        Args:
+            player: The player to add to the tournament.
+
+        Raises:
+            ValueError: If player is already registered in the tournament.
+        """
+        from src.entities.player import Player
+        if not isinstance(player, Player):
+            raise ValueError("Only Player objects can be added to the tournament.")
+        
+        # Check if player is already registered
+        if any(p.name == player.name for p in self.__players):
+            raise ValueError(f"Player '{player.name}' is already registered in this tournament.")
+        
+        self.__players.append(player)
+
+    def remove_player(self, player_name: str):
+        """
+        Remove a player from the tournament by name.
+
+        Args:
+            player_name (str): The name of the player to remove.
+
+        Raises:
+            ValueError: If player is not found in the tournament.
+        """
+        initial_length = len(self.__players)
+        self.__players = [p for p in self.__players if p.name != player_name]
+        
+        if len(self.__players) == initial_length:
+            raise ValueError(f"Player '{player_name}' not found in this tournament.")
+
+    def get_players_by_rating(self, rating_type: str = 'classic') -> list:
+        """
+        Get players sorted by rating in descending order.
+
+        Args:
+            rating_type (str): The type of rating to sort by ('classic', 'rapid', or 'blitz').
+
+        Returns:
+            list: List of players sorted by rating (highest to lowest).
+        """
+        if rating_type not in ['classic', 'rapid', 'blitz']:
+            raise ValueError("Rating type must be 'classic', 'rapid', or 'blitz'.")
+        
+        return sorted(
+            self.__players,
+            key=lambda p: getattr(p.rating, rating_type),
+            reverse=True
+        )

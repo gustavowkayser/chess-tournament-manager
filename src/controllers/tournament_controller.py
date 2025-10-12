@@ -147,3 +147,63 @@ class TournamentController(BaseController):
         ]
         
         return filtered_tournaments
+
+    def add_player_to_tournament(self, tournament_name: str, player) -> None:
+        """
+        Add a player to a tournament.
+
+        Args:
+            tournament_name (str): The name of the tournament.
+            player: The player object to add.
+
+        Raises:
+            ValueError: If tournament is not found or player cannot be added.
+        """
+        tournament = self.get_tournament_by_name(tournament_name)
+        
+        if tournament is None:
+            raise ValueError(f"Tournament '{tournament_name}' not found.")
+        
+        tournament.add_player(player)
+        self.update_tournament(tournament_name, tournament)
+
+    def remove_player_from_tournament(self, tournament_name: str, player_name: str) -> None:
+        """
+        Remove a player from a tournament.
+
+        Args:
+            tournament_name (str): The name of the tournament.
+            player_name (str): The name of the player to remove.
+
+        Raises:
+            ValueError: If tournament or player is not found.
+        """
+        tournament = self.get_tournament_by_name(tournament_name)
+        
+        if tournament is None:
+            raise ValueError(f"Tournament '{tournament_name}' not found.")
+        
+        tournament.remove_player(player_name)
+        self.update_tournament(tournament_name, tournament)
+
+    def get_tournament_ranking(self, tournament_name: str, rating_type: str = 'classic') -> list:
+        """
+        Get the ranking of players in a tournament based on rating.
+
+        Args:
+            tournament_name (str): The name of the tournament.
+            rating_type (str): The type of rating to use ('classic', 'rapid', or 'blitz').
+
+        Returns:
+            list: List of players sorted by rating (highest to lowest).
+
+        Raises:
+            ValueError: If tournament is not found.
+        """
+        tournament = self.get_tournament_by_name(tournament_name)
+        
+        if tournament is None:
+            raise ValueError(f"Tournament '{tournament_name}' not found.")
+        
+        return tournament.get_players_by_rating(rating_type)
+

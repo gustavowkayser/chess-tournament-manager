@@ -1,5 +1,6 @@
 from .base_view import BaseView
 from src.controllers.tournament_controller import TournamentController
+from src.controllers.player_controller import PlayerController
 from src.entities.swiss_tournament import SwissTournament
 from src.entities.eliminatory_tournament import EliminatoryTournament
 
@@ -9,6 +10,7 @@ class TournamentView(BaseView):
 
     def __init__(self):
         self.controller = TournamentController()
+        self.player_controller = PlayerController()
 
     def show_menu(self):
         """Display the tournament menu and handle user input."""
@@ -159,9 +161,13 @@ class TournamentView(BaseView):
             print(f"       GERENCIAR TORNEIO: {tournament.name}")
             self.display_separator()
             print("1 - Ver detalhes")
-            print("2 - Editar torneio")
-            print("3 - Excluir torneio")
-            print("4 - Voltar")
+            print("2 - Adicionar jogador")
+            print("3 - Remover jogador")
+            print("4 - Ver ranking inicial")
+            print("5 - Listar jogadores inscritos")
+            print("6 - Editar torneio")
+            print("7 - Excluir torneio")
+            print("8 - Voltar")
             self.display_separator()
 
             choice = self.get_input("\nEscolha uma opção: ")
@@ -169,12 +175,24 @@ class TournamentView(BaseView):
             if choice == '1':
                 self._view_tournament_details(tournament)
             elif choice == '2':
+                self._add_player_to_tournament(tournament)
+                # Reload tournament to get updated data
+                tournament = self.controller.get_tournament_by_name(tournament.name)
+            elif choice == '3':
+                self._remove_player_from_tournament(tournament)
+                # Reload tournament to get updated data
+                tournament = self.controller.get_tournament_by_name(tournament.name)
+            elif choice == '4':
+                self._view_tournament_ranking(tournament)
+            elif choice == '5':
+                self._list_tournament_players(tournament)
+            elif choice == '6':
                 self._edit_tournament(tournament)
                 break
-            elif choice == '3':
+            elif choice == '7':
                 if self._delete_tournament(tournament):
                     break
-            elif choice == '4':
+            elif choice == '8':
                 break
             else:
                 self.display_error("Opção inválida!")
@@ -262,3 +280,182 @@ class TournamentView(BaseView):
             self.display_message("Operação cancelada.")
             self.pause()
             return False
+
+    def _add_player_to_tournament(self, tournament):
+        """Add a player to the tournament."""
+        self.clear_screen()
+        self.display_separator()
+        print("           ADICIONAR JOGADOR AO TORNEIO")
+        self.display_separator()
+
+        try:
+            # Get all available players
+            all_players = self.player_controller.get_all_players()
+            
+            if not all_players:
+                print("\nNenhum jogador cadastrado no sistema.")
+                print("Por favor, cadastre jogadores primeiro.")
+                self.pause()
+                return
+
+            # Show current players in tournament
+            current_players = tournament.players
+            if current_players:
+                print(f"\nJogadores já inscritos ({len(current_players)}):")
+                for p in current_players:
+                    print(f"  - {p.name}")
+
+            # Show available players (not in tournament)
+            available_players = [p for p in all_players if p.name not in [cp.name for cp in current_players]]
+            
+            if not available_players:
+                print("\nTodos os jogadores cadastrados já estão inscritos neste torneio.")
+                self.pause()
+                return
+
+            print(f"\nJogadores disponíveis:")
+            for i, player in enumerate(available_players, 1):
+                print(f"{i}. {player.name} (Rating Clássico: {player.rating.classic})")
+
+            choice = self.get_input("\nEscolha o número do jogador (0 para cancelar): ")
+            
+            if choice == '0':
+                return
+
+            try:
+                index = int(choice) - 1
+                if index < 0 or index >= len(available_players):
+                    self.display_error("Opção inválida!")
+                    self.pause()
+                    return
+
+                selected_player = available_players[index]
+                self.controller.add_player_to_tournament(tournament.name, selected_player)
+                self.display_success(f"Jogador '{selected_player.name}' adicionado ao torneio!")
+            except ValueError:
+                self.display_error("Entrada inválida!")
+        except Exception as e:
+            self.display_error(f"Erro ao adicionar jogador: {str(e)}")
+
+        self.pause()
+
+    def _remove_player_from_tournament(self, tournament):
+        """Remove a player from the tournament."""
+        self.clear_screen()
+        self.display_separator()
+        print("           REMOVER JOGADOR DO TORNEIO")
+        self.display_separator()
+
+        try:
+            players = tournament.players
+            
+            if not players:
+                print("\nNenhum jogador inscrito neste torneio.")
+                self.pause()
+                return
+
+            print(f"\nJogadores inscritos:")
+            for i, player in enumerate(players, 1):
+                print(f"{i}. {player.name}")
+
+            choice = self.get_input("\nEscolha o número do jogador para remover (0 para cancelar): ")
+            
+            if choice == '0':
+                return
+
+            try:
+                index = int(choice) - 1
+                if index < 0 or index >= len(players):
+                    self.display_error("Opção inválida!")
+                    self.pause()
+                    return
+
+                selected_player = players[index]
+                
+                # Confirm removal
+                confirm = self.get_input(f"\n⚠️  Remover '{selected_player.name}' do torneio? (S/N): ")
+                
+                if confirm.upper() == 'S':
+                    self.controller.remove_player_from_tournament(tournament.name, selected_player.name)
+                    self.display_success(f"Jogador '{selected_player.name}' removido do torneio!")
+                else:
+                    self.display_message("Operação cancelada.")
+            except ValueError:
+                self.display_error("Entrada inválida!")
+        except Exception as e:
+            self.display_error(f"Erro ao remover jogador: {str(e)}")
+
+        self.pause()
+
+    def _view_tournament_ranking(self, tournament):
+        """View the initial ranking of players in the tournament."""
+        self.clear_screen()
+        self.display_separator()
+        print("           RANKING INICIAL DO TORNEIO")
+        self.display_separator()
+
+        try:
+            players = tournament.players
+            
+            if not players:
+                print("\nNenhum jogador inscrito neste torneio.")
+                self.pause()
+                return
+
+            # Ask which rating type to use for ranking
+            print("\nTipo de rating para o ranking:")
+            print("1 - Clássico")
+            print("2 - Rápido")
+            print("3 - Blitz")
+            
+            rating_choice = self.get_input("\nEscolha o tipo: ")
+            
+            rating_map = {'1': 'classic', '2': 'rapid', '3': 'blitz'}
+            rating_type = rating_map.get(rating_choice, 'classic')
+            rating_name = {'classic': 'Clássico', 'rapid': 'Rápido', 'blitz': 'Blitz'}[rating_type]
+
+            ranked_players = self.controller.get_tournament_ranking(tournament.name, rating_type)
+
+            print(f"\n{'='*60}")
+            print(f"RANKING INICIAL - Rating {rating_name}")
+            print(f"{'='*60}")
+            print(f"\nTotal de jogadores: {len(ranked_players)}\n")
+            
+            for i, player in enumerate(ranked_players, 1):
+                rating_value = getattr(player.rating, rating_type)
+                print(f"{i}º lugar - {player.name}")
+                print(f"   Rating {rating_name}: {rating_value}")
+                print(f"   Ratings: Clássico: {player.rating.classic} | Rápido: {player.rating.rapid} | Blitz: {player.rating.blitz}")
+                print()
+        except Exception as e:
+            self.display_error(f"Erro ao visualizar ranking: {str(e)}")
+
+        self.pause()
+
+    def _list_tournament_players(self, tournament):
+        """List all players registered in the tournament."""
+        self.clear_screen()
+        self.display_separator()
+        print("           JOGADORES INSCRITOS NO TORNEIO")
+        self.display_separator()
+
+        try:
+            players = tournament.players
+            
+            if not players:
+                print("\nNenhum jogador inscrito neste torneio.")
+            else:
+                print(f"\nTotal de jogadores inscritos: {len(players)}\n")
+                for i, player in enumerate(players, 1):
+                    print(f"{i}. {player.name}")
+                    print(f"   Data de Nascimento: {player.birthdate}")
+                    print(f"   Gênero: {player.gender}")
+                    print(f"   Ratings:")
+                    print(f"     - Clássico: {player.rating.classic}")
+                    print(f"     - Rápido: {player.rating.rapid}")
+                    print(f"     - Blitz: {player.rating.blitz}")
+                    print()
+        except Exception as e:
+            self.display_error(f"Erro ao listar jogadores: {str(e)}")
+
+        self.pause()
