@@ -214,7 +214,7 @@ class TournamentView(BaseView):
             print("1 - Ver detalhes")
             print("2 - Adicionar jogador")
             print("3 - Remover jogador")
-            print("4 - Ver ranking inicial")
+            print("4 - Ver rankings")
             print("5 - Listar jogadores inscritos")
             
             # Check if next round can be generated
@@ -243,7 +243,7 @@ class TournamentView(BaseView):
                 # Reload tournament to get updated data
                 tournament = self.controller.get_tournament_by_name(tournament.name)
             elif choice == '4':
-                self._view_tournament_ranking(tournament)
+                self._view_rankings_menu(tournament)
             elif choice == '5':
                 self._list_tournament_players(tournament)
             elif choice == '6':
@@ -476,7 +476,49 @@ class TournamentView(BaseView):
 
         self.pause()
 
-    def _view_tournament_ranking(self, tournament):
+    def _view_rankings_menu(self, tournament):
+        """Display the rankings menu with options for initial and round rankings."""
+        while True:
+            self.clear_screen()
+            self.display_separator()
+            print(f"       RANKINGS - {tournament.name}")
+            self.display_separator()
+            print("1 - Ranking Inicial")
+            
+            # Show ranking options for each completed round
+            if tournament.rounds:
+                for i, round_obj in enumerate(tournament.rounds, 1):
+                    # Check if round has all results
+                    all_results = all(
+                        match.result is not None or match.black is None 
+                        for match in round_obj.matches
+                    )
+                    status = "✓" if all_results else "⚠"
+                    print(f"{i + 1} - Ranking após {i}ª rodada {status}")
+            
+            print("0 - Voltar")
+            self.display_separator()
+
+            choice = self.get_input("\nEscolha uma opção: ")
+
+            if choice == '0':
+                break
+            elif choice == '1':
+                self._view_tournament_ranking(tournament, is_initial=True)
+            else:
+                # Check if it's a round ranking
+                try:
+                    round_index = int(choice) - 2  # Subtract 2 (option 1 is initial, option 2 is round 1)
+                    if 0 <= round_index < len(tournament.rounds):
+                        self._view_round_ranking(tournament, round_index + 1)
+                    else:
+                        self.display_error("Opção inválida!")
+                        self.pause()
+                except ValueError:
+                    self.display_error("Opção inválida!")
+                    self.pause()
+
+    def _view_tournament_ranking(self, tournament, is_initial=True):
         """View the initial ranking of players in the tournament."""
         self.clear_screen()
         self.display_separator()
@@ -528,6 +570,102 @@ class TournamentView(BaseView):
                 print()
         except Exception as e:
             self.display_error(f"Erro ao visualizar ranking: {str(e)}")
+
+        self.pause()
+
+    def _view_round_ranking(self, tournament, round_number):
+        """View the ranking after a specific round."""
+        self.clear_screen()
+        self.display_separator()
+        print(f"           RANKING APÓS {round_number}ª RODADA")
+        self.display_separator()
+
+        try:
+            players = tournament.players
+            
+            if not players:
+                print("\nNenhum jogador inscrito neste torneio.")
+                self.pause()
+                return
+            
+            # Check if the round exists
+            if round_number > len(tournament.rounds):
+                self.display_error(f"A {round_number}ª rodada ainda não foi gerada!")
+                self.pause()
+                return
+
+            # Calculate scores up to this round
+            player_scores = {}
+            
+            for player in players:
+                player_scores[player.name] = {
+                    'player': player,
+                    'score': 0.0,
+                    'matches_played': 0
+                }
+            
+            # Calculate scores from all rounds up to round_number
+            for i in range(round_number):
+                if i >= len(tournament.rounds):
+                    break
+                    
+                round_obj = tournament.rounds[i]
+                
+                for match in round_obj.matches:
+                    white_name = match.white.name
+                    
+                    if match.black is None:
+                        # BYE - automatic win
+                        player_scores[white_name]['score'] += 1.0
+                        player_scores[white_name]['matches_played'] += 1
+                    elif match.result:
+                        player_scores[white_name]['matches_played'] += 1
+                        
+                        black_name = match.black.name
+                        player_scores[black_name]['matches_played'] += 1
+                        
+                        if match.result == "1-0":
+                            player_scores[white_name]['score'] += 1.0
+                        elif match.result == "0-1":
+                            player_scores[black_name]['score'] += 1.0
+                        elif match.result == "0.5-0.5":
+                            player_scores[white_name]['score'] += 0.5
+                            player_scores[black_name]['score'] += 0.5
+
+            # Sort players by score (descending), then by rating (descending)
+            rating_type = tournament.time_control.value
+            rating_name = str(tournament.time_control)
+            
+            sorted_players = sorted(
+                player_scores.values(),
+                key=lambda x: (
+                    -x['score'],
+                    -getattr(x['player'].rating, rating_type)
+                )
+            )
+
+            print(f"\nRitmo do torneio: {rating_name}")
+            print(f"Rodadas contabilizadas: 1 até {round_number}")
+            print(f"\n{'='*80}")
+            print(f"RANKING APÓS {round_number}ª RODADA")
+            print(f"{'='*80}")
+            print(f"\nTotal de jogadores: {len(sorted_players)}\n")
+            
+            for i, data in enumerate(sorted_players, 1):
+                player = data['player']
+                score = data['score']
+                matches = data['matches_played']
+                rating_value = getattr(player.rating, rating_type)
+                
+                print(f"{i}º lugar - {player.name}")
+                print(f"   Pontuação: {score:.1f} pontos ({matches} partidas)")
+                print(f"   Rating {rating_name}: {rating_value}")
+                print()
+                
+        except Exception as e:
+            self.display_error(f"Erro ao visualizar ranking: {str(e)}")
+            import traceback
+            traceback.print_exc()
 
         self.pause()
 
