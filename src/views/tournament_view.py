@@ -1,12 +1,14 @@
 from .base_view import BaseView
+from src.controllers.tournament_controller import TournamentController
+from src.entities.swiss_tournament import SwissTournament
+from src.entities.eliminatory_tournament import EliminatoryTournament
 
 
 class TournamentView(BaseView):
     """View class for managing tournament-related screens."""
 
     def __init__(self):
-        # TODO: Inicializar o controller de torneio quando estiver disponível
-        pass
+        self.controller = TournamentController()
 
     def show_menu(self):
         """Display the tournament menu and handle user input."""
@@ -41,9 +43,39 @@ class TournamentView(BaseView):
         self.display_separator()
         print("           CRIAR NOVO TORNEIO")
         self.display_separator()
-        
-        # TODO: Implementar quando o controller de torneio estiver pronto
-        self.display_message("\n⚠️  Funcionalidade em desenvolvimento")
+
+        try:
+            # Get basic tournament information
+            name = self.get_input("\nNome do torneio: ")
+            location = self.get_input("Local: ")
+            start_date = self.get_input("Data de início (YYYY-MM-DD): ")
+            end_date = self.get_input("Data de término (YYYY-MM-DD): ")
+
+            # Select tournament type
+            print("\nTipo de torneio:")
+            print("1 - Torneio Suíço")
+            print("2 - Torneio Eliminatório")
+            tournament_type = self.get_input("\nEscolha o tipo: ")
+
+            if tournament_type == '1':
+                # Swiss tournament
+                rounds = int(self.get_input("Número de rodadas: "))
+                tournament = SwissTournament(name, location, start_date, end_date, rounds)
+            elif tournament_type == '2':
+                # Eliminatory tournament
+                tournament = EliminatoryTournament(name, location, start_date, end_date)
+            else:
+                self.display_error("Tipo de torneio inválido!")
+                self.pause()
+                return
+
+            self.controller.create_tournament(tournament)
+            self.display_success(f"Torneio '{name}' criado com sucesso!")
+        except ValueError as e:
+            self.display_error(str(e))
+        except Exception as e:
+            self.display_error(f"Erro ao criar torneio: {str(e)}")
+
         self.pause()
 
     def list_tournaments_screen(self):
@@ -52,9 +84,30 @@ class TournamentView(BaseView):
         self.display_separator()
         print("           LISTA DE TORNEIOS")
         self.display_separator()
-        
-        # TODO: Implementar quando o controller de torneio estiver pronto
-        self.display_message("\n⚠️  Funcionalidade em desenvolvimento")
+
+        try:
+            tournaments = self.controller.get_all_tournaments()
+            
+            if not tournaments:
+                print("\nNenhum torneio registrado ainda.")
+            else:
+                print(f"\nTotal de torneios: {len(tournaments)}\n")
+                for i, tournament in enumerate(tournaments, 1):
+                    print(f"{i}. {tournament.name}")
+                    print(f"   Local: {tournament.location}")
+                    print(f"   Data: {tournament.start_date} a {tournament.end_date}")
+                    
+                    # Display type-specific information
+                    if isinstance(tournament, SwissTournament):
+                        print(f"   Tipo: Suíço ({tournament.rounds} rodadas)")
+                    elif isinstance(tournament, EliminatoryTournament):
+                        print(f"   Tipo: Eliminatório")
+                    else:
+                        print(f"   Tipo: Básico")
+                    print()
+        except Exception as e:
+            self.display_error(f"Erro ao listar torneios: {str(e)}")
+
         self.pause()
 
     def manage_tournament_screen(self):
@@ -63,7 +116,149 @@ class TournamentView(BaseView):
         self.display_separator()
         print("           GERENCIAR TORNEIO")
         self.display_separator()
+
+        try:
+            # List available tournaments
+            tournaments = self.controller.get_all_tournaments()
+            
+            if not tournaments:
+                print("\nNenhum torneio disponível para gerenciar.")
+                self.pause()
+                return
+
+            print("\nTorneios disponíveis:")
+            for i, tournament in enumerate(tournaments, 1):
+                print(f"{i}. {tournament.name}")
+
+            choice = self.get_input("\nEscolha o número do torneio (0 para cancelar): ")
+            
+            if choice == '0':
+                return
+
+            try:
+                index = int(choice) - 1
+                if index < 0 or index >= len(tournaments):
+                    self.display_error("Opção inválida!")
+                    self.pause()
+                    return
+
+                selected_tournament = tournaments[index]
+                self._manage_tournament_menu(selected_tournament)
+            except ValueError:
+                self.display_error("Entrada inválida!")
+                self.pause()
+        except Exception as e:
+            self.display_error(f"Erro ao gerenciar torneio: {str(e)}")
+            self.pause()
+
+    def _manage_tournament_menu(self, tournament):
+        """Display management menu for a specific tournament."""
+        while True:
+            self.clear_screen()
+            self.display_separator()
+            print(f"       GERENCIAR TORNEIO: {tournament.name}")
+            self.display_separator()
+            print("1 - Ver detalhes")
+            print("2 - Editar torneio")
+            print("3 - Excluir torneio")
+            print("4 - Voltar")
+            self.display_separator()
+
+            choice = self.get_input("\nEscolha uma opção: ")
+
+            if choice == '1':
+                self._view_tournament_details(tournament)
+            elif choice == '2':
+                self._edit_tournament(tournament)
+                break
+            elif choice == '3':
+                if self._delete_tournament(tournament):
+                    break
+            elif choice == '4':
+                break
+            else:
+                self.display_error("Opção inválida!")
+                self.pause()
+
+    def _view_tournament_details(self, tournament):
+        """Display detailed information about a tournament."""
+        self.clear_screen()
+        self.display_separator()
+        print("           DETALHES DO TORNEIO")
+        self.display_separator()
         
-        # TODO: Implementar quando o controller de torneio estiver pronto
-        self.display_message("\n⚠️  Funcionalidade em desenvolvimento")
+        print(f"\nNome: {tournament.name}")
+        print(f"Local: {tournament.location}")
+        print(f"Data de início: {tournament.start_date}")
+        print(f"Data de término: {tournament.end_date}")
+        
+        if isinstance(tournament, SwissTournament):
+            print(f"Tipo: Torneio Suíço")
+            print(f"Número de rodadas: {tournament.rounds}")
+        elif isinstance(tournament, EliminatoryTournament):
+            print(f"Tipo: Torneio Eliminatório")
+        else:
+            print(f"Tipo: Torneio Básico")
+        
         self.pause()
+
+    def _edit_tournament(self, tournament):
+        """Edit tournament information."""
+        self.clear_screen()
+        self.display_separator()
+        print("           EDITAR TORNEIO")
+        self.display_separator()
+
+        try:
+            old_name = tournament.name
+            
+            print(f"\nDeixe em branco para manter o valor atual.")
+            name = self.get_input(f"Nome [{tournament.name}]: ") or tournament.name
+            location = self.get_input(f"Local [{tournament.location}]: ") or tournament.location
+            start_date = self.get_input(f"Data de início [{tournament.start_date}]: ") or tournament.start_date
+            end_date = self.get_input(f"Data de término [{tournament.end_date}]: ") or tournament.end_date
+
+            # Update based on tournament type
+            if isinstance(tournament, SwissTournament):
+                rounds_input = self.get_input(f"Número de rodadas [{tournament.rounds}]: ")
+                rounds = int(rounds_input) if rounds_input else tournament.rounds
+                updated_tournament = SwissTournament(name, location, start_date, end_date, rounds)
+            elif isinstance(tournament, EliminatoryTournament):
+                updated_tournament = EliminatoryTournament(name, location, start_date, end_date)
+            else:
+                from src.entities.tournament import Tournament
+                updated_tournament = Tournament(name, location, start_date, end_date)
+
+            self.controller.update_tournament(old_name, updated_tournament)
+            self.display_success(f"Torneio '{name}' atualizado com sucesso!")
+        except ValueError as e:
+            self.display_error(str(e))
+        except Exception as e:
+            self.display_error(f"Erro ao editar torneio: {str(e)}")
+
+        self.pause()
+
+    def _delete_tournament(self, tournament) -> bool:
+        """Delete a tournament after confirmation."""
+        self.clear_screen()
+        self.display_separator()
+        print("           EXCLUIR TORNEIO")
+        self.display_separator()
+
+        print(f"\n⚠️  Tem certeza que deseja excluir o torneio '{tournament.name}'?")
+        confirm = self.get_input("Digite 'SIM' para confirmar: ")
+
+        if confirm.upper() == 'SIM':
+            try:
+                self.controller.delete_tournament(tournament.name)
+                self.display_success(f"Torneio '{tournament.name}' excluído com sucesso!")
+                self.pause()
+                return True
+            except Exception as e:
+                self.display_error(f"Erro ao excluir torneio: {str(e)}")
+                self.pause()
+                return False
+        else:
+            self.display_message("Operação cancelada.")
+            self.pause()
+            return False
