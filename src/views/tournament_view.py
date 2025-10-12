@@ -4,7 +4,7 @@ from src.controllers.player_controller import PlayerController
 from src.entities.swiss_tournament import SwissTournament
 from src.entities.eliminatory_tournament import EliminatoryTournament
 from src.entities.time_control import TimeControl
-
+import traceback
 
 class TournamentView(BaseView):
     """View class for managing tournament-related screens."""
@@ -15,6 +15,13 @@ class TournamentView(BaseView):
 
     def show_menu(self):
         """Display the tournament menu and handle user input."""
+        menu_options = {
+            '1': self.create_tournament_screen,
+            '2': self.list_tournaments_screen,
+            '3': self.manage_tournament_screen,
+            '4': None  # Sair
+        }
+
         while True:
             self.clear_screen()
             self.display_separator()
@@ -27,13 +34,10 @@ class TournamentView(BaseView):
             self.display_separator()
 
             choice = self.get_input("\nEscolha uma opção: ")
+            action = menu_options.get(choice)
 
-            if choice == '1':
-                self.create_tournament_screen()
-            elif choice == '2':
-                self.list_tournaments_screen()
-            elif choice == '3':
-                self.manage_tournament_screen()
+            if action:
+                action()
             elif choice == '4':
                 break
             else:
@@ -48,47 +52,13 @@ class TournamentView(BaseView):
         self.display_separator()
 
         try:
-            # Get basic tournament information
-            name = self.get_input("\nNome do torneio: ")
-            location = self.get_input("Local: ")
-            start_date = self.get_input("Data de início (YYYY-MM-DD): ")
-            end_date = self.get_input("Data de término (YYYY-MM-DD): ")
-
-            # Select time control
-            print("\nRitmo de jogo:")
-            print("1 - Clássico")
-            print("2 - Rápido")
-            print("3 - Blitz")
-            time_control_choice = self.get_input("\nEscolha o ritmo: ")
-
-            time_control_map = {
-                '1': TimeControl.CLASSIC,
-                '2': TimeControl.RAPID,
-                '3': TimeControl.BLITZ
-            }
-
-            time_control = time_control_map.get(time_control_choice)
+            name, location, start_date, end_date = self._get_tournament_basic_info()
+            time_control = self._get_time_control_choice()
             if time_control is None:
-                self.display_error("Ritmo de jogo inválido!")
-                self.pause()
                 return
 
-            # Select tournament type
-            print("\nTipo de torneio:")
-            print("1 - Torneio Suíço")
-            print("2 - Torneio Eliminatório")
-            tournament_type = self.get_input("\nEscolha o tipo: ")
-
-            if tournament_type == '1':
-                # Swiss tournament
-                rounds = int(self.get_input("Número de rodadas: "))
-                tournament = SwissTournament(name, location, start_date, end_date, time_control, rounds)
-            elif tournament_type == '2':
-                # Eliminatory tournament
-                tournament = EliminatoryTournament(name, location, start_date, end_date, time_control)
-            else:
-                self.display_error("Tipo de torneio inválido!")
-                self.pause()
+            tournament = self._get_tournament_type_and_rounds(name, location, start_date, end_date, time_control)
+            if tournament is None:
                 return
 
             self.controller.create_tournament(tournament)
@@ -109,25 +79,13 @@ class TournamentView(BaseView):
 
         try:
             tournaments = self.controller.get_all_tournaments()
-            
+
             if not tournaments:
                 print("\nNenhum torneio registrado ainda.")
             else:
                 print(f"\nTotal de torneios: {len(tournaments)}\n")
                 for i, tournament in enumerate(tournaments, 1):
-                    print(f"{i}. {tournament.name}")
-                    print(f"   Local: {tournament.location}")
-                    print(f"   Data: {tournament.start_date} a {tournament.end_date}")
-                    print(f"   Ritmo: {tournament.time_control}")
-                    
-                    # Display type-specific information
-                    if isinstance(tournament, SwissTournament):
-                        print(f"   Tipo: Suíço ({tournament.num_rounds} rodadas)")
-                    elif isinstance(tournament, EliminatoryTournament):
-                        print(f"   Tipo: Eliminatório")
-                    else:
-                        print(f"   Tipo: Básico")
-                    print()
+                    self._display_tournament_info(i, tournament)
         except Exception as e:
             self.display_error(f"Erro ao listar torneios: {str(e)}")
 
@@ -141,71 +99,110 @@ class TournamentView(BaseView):
         self.display_separator()
 
         try:
-            # List available tournaments
-            tournaments = self.controller.get_all_tournaments()
-            
-            if not tournaments:
-                print("\nNenhum torneio disponível para gerenciar.")
-                self.pause()
-                return
-
-            print("\nTorneios disponíveis:")
-            for i, tournament in enumerate(tournaments, 1):
-                print(f"{i}. {tournament.name}")
-
-            choice = self.get_input("\nEscolha o número do torneio (0 para cancelar): ")
-            
-            if choice == '0':
-                return
-
-            try:
-                index = int(choice) - 1
-                if index < 0 or index >= len(tournaments):
-                    self.display_error("Opção inválida!")
-                    self.pause()
-                    return
-
-                selected_tournament = tournaments[index]
+            selected_tournament = self._get_tournament_choice()
+            if selected_tournament:
                 self._manage_tournament_menu(selected_tournament)
-            except ValueError:
-                self.display_error("Entrada inválida!")
-                self.pause()
         except Exception as e:
             self.display_error(f"Erro ao gerenciar torneio: {str(e)}")
             self.pause()
 
-    def _can_generate_next_round(self, tournament) -> bool:
-        """
-        Check if the next round can be generated.
-        Returns True if there are no rounds or if all results from the last round are annotated.
-        
-        Args:
-            tournament: The tournament to check.
-            
-        Returns:
-            bool: True if next round can be generated, False otherwise.
-        """
-        # If no rounds exist, can generate first round
-        if not tournament.rounds or len(tournament.rounds) == 0:
-            return True
-        
-        # Get the last round
-        last_round = tournament.rounds[-1]
-        
-        # Check if all matches have results
-        for match in last_round.matches:
-            # BYE matches don't need results (white wins automatically)
-            if match.black is None:
-                continue
-            
-            # If any match doesn't have a result, can't generate next round
-            if match.result is None:
-                return False
-        
-        return True
+    def _get_tournament_basic_info(self):
+        name = self.get_input("\nNome do torneio: ")
+        location = self.get_input("Local: ")
+        start_date = self.get_input("Data de início (YYYY-MM-DD): ")
+        end_date = self.get_input("Data de término (YYYY-MM-DD): ")
+        return name, location, start_date, end_date
+
+    def _get_time_control_choice(self):
+        print("\nRitmo de jogo:")
+        print("1 - Clássico")
+        print("2 - Rápido")
+        print("3 - Blitz")
+        time_control_choice = self.get_input("\nEscolha o ritmo: ")
+
+        time_control_map = {
+            '1': TimeControl.CLASSIC,
+            '2': TimeControl.RAPID,
+            '3': TimeControl.BLITZ
+        }
+
+        time_control = time_control_map.get(time_control_choice)
+        if time_control is None:
+            self.display_error("Ritmo de jogo inválido!")
+            self.pause()
+        return time_control
+
+    def _get_tournament_type_and_rounds(self, name, location, start_date, end_date, time_control):
+        print("\nTipo de torneio:")
+        print("1 - Torneio Suíço")
+        print("2 - Torneio Eliminatório")
+        tournament_type = self.get_input("\nEscolha o tipo: ")
+
+        if tournament_type == '1':
+            rounds = int(self.get_input("Número de rodadas: "))
+            return SwissTournament(name, location, start_date, end_date, time_control, rounds)
+        elif tournament_type == '2':
+            return EliminatoryTournament(name, location, start_date, end_date, time_control)
+        else:
+            self.display_error("Tipo de torneio inválido!")
+            self.pause()
+            return None
+
+    def _display_tournament_info(self, index, tournament):
+        print(f"{index}. {tournament.name}")
+        print(f"   Local: {tournament.location}")
+        print(f"   Data: {tournament.start_date} a {tournament.end_date}")
+        print(f"   Ritmo: {tournament.time_control}")
+
+        if isinstance(tournament, SwissTournament):
+            print(f"   Tipo: Suíço ({tournament.num_rounds} rodadas)")
+        elif isinstance(tournament, EliminatoryTournament):
+            print(f"   Tipo: Eliminatório")
+        else:
+            print(f"   Tipo: Básico")
+        print()
+
+    def _get_tournament_choice(self):
+        tournaments = self.controller.get_all_tournaments()
+
+        if not tournaments:
+            print("\nNenhum torneio disponível para gerenciar.")
+            self.pause()
+            return None
+
+        print("\nTorneios disponíveis:")
+        for i, tournament in enumerate(tournaments, 1):
+            print(f"{i}. {tournament.name}")
+
+        choice = self.get_input("\nEscolha o número do torneio (0 para cancelar): ")
+
+        if choice == '0':
+            return None
+
+        try:
+            index = int(choice) - 1
+            if 0 <= index < len(tournaments):
+                return tournaments[index]
+            else:
+                self.display_error("Opção inválida!")
+                self.pause()
+                return None
+        except ValueError:
+            self.display_error("Entrada inválida!")
+            self.pause()
+            return None
 
     def _manage_tournament_menu(self, tournament):
         """Display management menu for a specific tournament."""
+        menu_actions = {
+            '1': self._view_tournament_details,
+            '2': self._add_player_to_tournament,
+            '3': self._remove_player_from_tournament,
+            '4': self._view_rankings_menu,
+            '5': self._list_tournament_players,
+            '7': self._edit_tournament,
+            '8': self._delete_tournament
+        }
         while True:
             self.clear_screen()
             self.display_separator()
@@ -216,15 +213,13 @@ class TournamentView(BaseView):
             print("3 - Remover jogador")
             print("4 - Ver rankings")
             print("5 - Listar jogadores inscritos")
-            
-            # Check if next round can be generated
+
             can_generate = self._can_generate_next_round(tournament)
-            
             if can_generate:
                 print(f"6 - Gerar emparceiramento ({tournament.get_current_round_number()}ª rodada)")
             else:
                 print(f"6 - Anotar resultados ({len(tournament.rounds)}ª rodada) - OBRIGATÓRIO")
-            
+
             print("7 - Editar torneio")
             print("8 - Excluir torneio")
             print("9 - Voltar")
@@ -232,40 +227,30 @@ class TournamentView(BaseView):
 
             choice = self.get_input("\nEscolha uma opção: ")
 
-            if choice == '1':
-                self._view_tournament_details(tournament)
-            elif choice == '2':
-                self._add_player_to_tournament(tournament)
-                # Reload tournament to get updated data
-                tournament = self.controller.get_tournament_by_name(tournament.name)
-            elif choice == '3':
-                self._remove_player_from_tournament(tournament)
-                # Reload tournament to get updated data
-                tournament = self.controller.get_tournament_by_name(tournament.name)
-            elif choice == '4':
-                self._view_rankings_menu(tournament)
-            elif choice == '5':
-                self._list_tournament_players(tournament)
+            if choice == '9':
+                break
+
+            action = menu_actions.get(choice)
+            if action:
+                action(tournament)
+                if choice in ['2', '3', '6', '7', '8']:
+                    tournament = self.controller.get_tournament_by_name(tournament.name)
             elif choice == '6':
                 if can_generate:
                     self._generate_round_pairings(tournament)
                 else:
                     self._annotate_results(tournament)
-                # Reload tournament to get updated data
                 tournament = self.controller.get_tournament_by_name(tournament.name)
-            elif choice == '7':
-                self._edit_tournament(tournament)
-                break
-            elif choice == '8':
-                if self._delete_tournament(tournament):
-                    break
-            elif choice == '9':
-                break
             else:
                 self.display_error("Opção inválida!")
                 self.pause()
-                # Reload tournament to get updated data
-                tournament = self.controller.get_tournament_by_name(tournament.name)
+
+    def _can_generate_next_round(self, tournament) -> bool:
+        if not tournament.rounds:
+            return True
+
+        last_round = tournament.rounds[-1]
+        return all(match.result is not None or match.black is None for match in last_round.matches)
 
     def _view_tournament_details(self, tournament):
         """Display detailed information about a tournament."""
@@ -306,22 +291,8 @@ class TournamentView(BaseView):
             start_date = self.get_input(f"Data de início [{tournament.start_date}]: ") or tournament.start_date
             end_date = self.get_input(f"Data de término [{tournament.end_date}]: ") or tournament.end_date
 
-            # Time control selection
-            print(f"\nRitmo de jogo atual: {tournament.time_control}")
-            print("Deixe em branco para manter, ou escolha:")
-            print("1 - Clássico")
-            print("2 - Rápido")
-            print("3 - Blitz")
-            time_control_input = self.get_input("Nova escolha: ")
-            
-            time_control_map = {
-                '1': TimeControl.CLASSIC,
-                '2': TimeControl.RAPID,
-                '3': TimeControl.BLITZ
-            }
-            time_control = time_control_map.get(time_control_input, tournament.time_control)
+            time_control = self._get_time_control_choice() or tournament.time_control
 
-            # Update based on tournament type
             if isinstance(tournament, SwissTournament):
                 rounds_input = self.get_input(f"Número de rodadas [{tournament.num_rounds}]: ")
                 rounds = int(rounds_input) if rounds_input else tournament.num_rounds
@@ -332,7 +303,6 @@ class TournamentView(BaseView):
                 from src.entities.tournament import Tournament
                 updated_tournament = Tournament(name, location, start_date, end_date, time_control)
 
-            # Copy players from old tournament to updated tournament
             for player in tournament.players:
                 updated_tournament.add_player(player)
 
@@ -378,7 +348,6 @@ class TournamentView(BaseView):
         self.display_separator()
 
         try:
-            # Get all available players
             all_players = self.player_controller.get_all_players()
             
             if not all_players:
@@ -387,14 +356,12 @@ class TournamentView(BaseView):
                 self.pause()
                 return
 
-            # Show current players in tournament
             current_players = tournament.players
             if current_players:
                 print(f"\nJogadores já inscritos ({len(current_players)}):")
                 for p in current_players:
                     print(f"  - {p.name}")
 
-            # Show available players (not in tournament)
             available_players = [p for p in all_players if p.name not in [cp.name for cp in current_players]]
             
             if not available_players:
@@ -413,14 +380,12 @@ class TournamentView(BaseView):
 
             try:
                 index = int(choice) - 1
-                if index < 0 or index >= len(available_players):
+                if 0 <= index < len(available_players):
+                    selected_player = available_players[index]
+                    self.controller.add_player_to_tournament(tournament.name, selected_player)
+                    self.display_success(f"Jogador '{selected_player.name}' adicionado ao torneio!")
+                else:
                     self.display_error("Opção inválida!")
-                    self.pause()
-                    return
-
-                selected_player = available_players[index]
-                self.controller.add_player_to_tournament(tournament.name, selected_player)
-                self.display_success(f"Jogador '{selected_player.name}' adicionado ao torneio!")
             except ValueError:
                 self.display_error("Entrada inválida!")
         except Exception as e:
@@ -454,21 +419,17 @@ class TournamentView(BaseView):
 
             try:
                 index = int(choice) - 1
-                if index < 0 or index >= len(players):
-                    self.display_error("Opção inválida!")
-                    self.pause()
-                    return
-
-                selected_player = players[index]
-                
-                # Confirm removal
-                confirm = self.get_input(f"\n⚠️  Remover '{selected_player.name}' do torneio? (S/N): ")
-                
-                if confirm.upper() == 'S':
-                    self.controller.remove_player_from_tournament(tournament.name, selected_player.name)
-                    self.display_success(f"Jogador '{selected_player.name}' removido do torneio!")
+                if 0 <= index < len(players):
+                    selected_player = players[index]
+                    confirm = self.get_input(f"\n⚠️  Remover '{selected_player.name}' do torneio? (S/N): ")
+                    
+                    if confirm.upper() == 'S':
+                        self.controller.remove_player_from_tournament(tournament.name, selected_player.name)
+                        self.display_success(f"Jogador '{selected_player.name}' removido do torneio!")
+                    else:
+                        self.display_message("Operação cancelada.")
                 else:
-                    self.display_message("Operação cancelada.")
+                    self.display_error("Opção inválida!")
             except ValueError:
                 self.display_error("Entrada inválida!")
         except Exception as e:
@@ -477,25 +438,19 @@ class TournamentView(BaseView):
         self.pause()
 
     def _view_rankings_menu(self, tournament):
-        """Display the rankings menu with options for initial and round rankings."""
+        """Display the rankings menu."""
         while True:
             self.clear_screen()
             self.display_separator()
             print(f"       RANKINGS - {tournament.name}")
             self.display_separator()
             print("1 - Ranking Inicial")
-            
-            # Show ranking options for each completed round
-            if tournament.rounds:
-                for i, round_obj in enumerate(tournament.rounds, 1):
-                    # Check if round has all results
-                    all_results = all(
-                        match.result is not None or match.black is None 
-                        for match in round_obj.matches
-                    )
-                    status = "✓" if all_results else "⚠"
-                    print(f"{i + 1} - Ranking após {i}ª rodada {status}")
-            
+
+            for i, round_obj in enumerate(tournament.rounds or [], 1):
+                all_results = all(m.result is not None or m.black is None for m in round_obj.matches)
+                status = "✓" if all_results else "⚠"
+                print(f"{i + 1} - Ranking após {i}ª rodada {status}")
+
             print("0 - Voltar")
             self.display_separator()
 
@@ -504,11 +459,10 @@ class TournamentView(BaseView):
             if choice == '0':
                 break
             elif choice == '1':
-                self._view_tournament_ranking(tournament, is_initial=True)
+                self._view_tournament_ranking(tournament)
             else:
-                # Check if it's a round ranking
                 try:
-                    round_index = int(choice) - 2  # Subtract 2 (option 1 is initial, option 2 is round 1)
+                    round_index = int(choice) - 2
                     if 0 <= round_index < len(tournament.rounds):
                         self._view_round_ranking(tournament, round_index + 1)
                     else:
@@ -518,7 +472,7 @@ class TournamentView(BaseView):
                     self.display_error("Opção inválida!")
                     self.pause()
 
-    def _view_tournament_ranking(self, tournament, is_initial=True):
+    def _view_tournament_ranking(self, tournament):
         """View the initial ranking of players in the tournament."""
         self.clear_screen()
         self.display_separator()
@@ -526,52 +480,54 @@ class TournamentView(BaseView):
         self.display_separator()
 
         try:
-            players = tournament.players
-            
-            if not players:
+            if not tournament.players:
                 print("\nNenhum jogador inscrito neste torneio.")
                 self.pause()
                 return
 
-            # Use the tournament's time control for ranking
-            rating_type = tournament.time_control.value
-            rating_name = str(tournament.time_control)
-
-            print(f"\nRitmo do torneio: {rating_name}")
-            print(f"O ranking será baseado no rating {rating_name}\n")
-
-            # Allow user to choose a different rating if desired
-            use_tournament_rating = self.get_input("Deseja usar um rating diferente? (S/N): ")
-            
-            if use_tournament_rating.upper() == 'S':
-                print("\nTipo de rating para o ranking:")
-                print("1 - Clássico")
-                print("2 - Rápido")
-                print("3 - Blitz")
-                
-                rating_choice = self.get_input("\nEscolha o tipo: ")
-                
-                rating_map = {'1': 'classic', '2': 'rapid', '3': 'blitz'}
-                rating_type = rating_map.get(rating_choice, rating_type)
-                rating_name = {'classic': 'Clássico', 'rapid': 'Rápido', 'blitz': 'Blitz'}[rating_type]
+            rating_type, rating_name = self._get_ranking_type(tournament)
+            if rating_type is None:
+                return
 
             ranked_players = self.controller.get_tournament_ranking(tournament.name, rating_type)
+            self._display_rankings(ranked_players, rating_name, rating_type)
 
-            print(f"\n{'='*60}")
-            print(f"RANKING INICIAL - Rating {rating_name}")
-            print(f"{'='*60}")
-            print(f"\nTotal de jogadores: {len(ranked_players)}\n")
-            
-            for i, player in enumerate(ranked_players, 1):
-                rating_value = getattr(player.rating, rating_type)
-                print(f"{i}º lugar - {player.name}")
-                print(f"   Rating {rating_name}: {rating_value}")
-                print(f"   Ratings: Clássico: {player.rating.classic} | Rápido: {player.rating.rapid} | Blitz: {player.rating.blitz}")
-                print()
         except Exception as e:
             self.display_error(f"Erro ao visualizar ranking: {str(e)}")
 
         self.pause()
+
+    def _get_ranking_type(self, tournament):
+        rating_type = tournament.time_control.value
+        rating_name = str(tournament.time_control)
+        print(f"\nRitmo do torneio: {rating_name}")
+        print(f"O ranking será baseado no rating {rating_name}\n")
+        use_tournament_rating = self.get_input("Deseja usar um rating diferente? (S/N): ")
+
+        if use_tournament_rating.upper() == 'S':
+            print("\nTipo de rating para o ranking:")
+            print("1 - Clássico")
+            print("2 - Rápido")
+            print("3 - Blitz")
+            rating_choice = self.get_input("\nEscolha o tipo: ")
+            rating_map = {'1': 'classic', '2': 'rapid', '3': 'blitz'}
+            rating_type = rating_map.get(rating_choice, rating_type)
+            rating_name = {'classic': 'Clássico', 'rapid': 'Rápido', 'blitz': 'Blitz'}[rating_type]
+
+        return rating_type, rating_name
+
+    def _display_rankings(self, ranked_players, rating_name, rating_type):
+        print(f"\n{'='*60}")
+        print(f"RANKING INICIAL - Rating {rating_name}")
+        print(f"{'='*60}")
+        print(f"\nTotal de jogadores: {len(ranked_players)}\n")
+
+        for i, player in enumerate(ranked_players, 1):
+            rating_value = getattr(player.rating, rating_type)
+            print(f"{i}º lugar - {player.name}")
+            print(f"   Rating {rating_name}: {rating_value}")
+            print(f"   Ratings: Clássico: {player.rating.classic} | Rápido: {player.rating.rapid} | Blitz: {player.rating.blitz}")
+            print()
 
     def _view_round_ranking(self, tournament, round_number):
         """View the ranking after a specific round."""
@@ -581,93 +537,81 @@ class TournamentView(BaseView):
         self.display_separator()
 
         try:
-            players = tournament.players
-            
-            if not players:
+            if not tournament.players:
                 print("\nNenhum jogador inscrito neste torneio.")
                 self.pause()
                 return
             
-            # Check if the round exists
             if round_number > len(tournament.rounds):
                 self.display_error(f"A {round_number}ª rodada ainda não foi gerada!")
                 self.pause()
                 return
 
-            # Calculate scores up to this round
-            player_scores = {}
-            
-            for player in players:
-                player_scores[player.name] = {
-                    'player': player,
-                    'score': 0.0,
-                    'matches_played': 0
-                }
-            
-            # Calculate scores from all rounds up to round_number
-            for i in range(round_number):
-                if i >= len(tournament.rounds):
-                    break
-                    
-                round_obj = tournament.rounds[i]
-                
-                for match in round_obj.matches:
-                    white_name = match.white.name
-                    
-                    if match.black is None:
-                        # BYE - automatic win
-                        player_scores[white_name]['score'] += 1.0
-                        player_scores[white_name]['matches_played'] += 1
-                    elif match.result:
-                        player_scores[white_name]['matches_played'] += 1
-                        
-                        black_name = match.black.name
-                        player_scores[black_name]['matches_played'] += 1
-                        
-                        if match.result == "1-0":
-                            player_scores[white_name]['score'] += 1.0
-                        elif match.result == "0-1":
-                            player_scores[black_name]['score'] += 1.0
-                        elif match.result == "0.5-0.5":
-                            player_scores[white_name]['score'] += 0.5
-                            player_scores[black_name]['score'] += 0.5
-
-            # Sort players by score (descending), then by rating (descending)
+            player_scores = self._calculate_player_scores(tournament, round_number)
             rating_type = tournament.time_control.value
             rating_name = str(tournament.time_control)
             
             sorted_players = sorted(
                 player_scores.values(),
-                key=lambda x: (
-                    -x['score'],
-                    -getattr(x['player'].rating, rating_type)
-                )
+                key=lambda x: (-x['score'], -getattr(x['player'].rating, rating_type))
             )
 
-            print(f"\nRitmo do torneio: {rating_name}")
-            print(f"Rodadas contabilizadas: 1 até {round_number}")
-            print(f"\n{'='*80}")
-            print(f"RANKING APÓS {round_number}ª RODADA")
-            print(f"{'='*80}")
-            print(f"\nTotal de jogadores: {len(sorted_players)}\n")
-            
-            for i, data in enumerate(sorted_players, 1):
-                player = data['player']
-                score = data['score']
-                matches = data['matches_played']
-                rating_value = getattr(player.rating, rating_type)
-                
-                print(f"{i}º lugar - {player.name}")
-                print(f"   Pontuação: {score:.1f} pontos ({matches} partidas)")
-                print(f"   Rating {rating_name}: {rating_value}")
-                print()
+            self._display_round_rankings(sorted_players, rating_name, round_number, rating_type)
                 
         except Exception as e:
             self.display_error(f"Erro ao visualizar ranking: {str(e)}")
-            import traceback
             traceback.print_exc()
 
         self.pause()
+
+    def _calculate_player_scores(self, tournament, round_number):
+        player_scores = {
+            p.name: {'player': p, 'score': 0.0, 'matches_played': 0}
+            for p in tournament.players
+        }
+        for i in range(round_number):
+            if i >= len(tournament.rounds):
+                break
+            round_obj = tournament.rounds[i]
+            for match in round_obj.matches:
+                self._update_scores_from_match(player_scores, match)
+        return player_scores
+
+    def _update_scores_from_match(self, player_scores, match):
+        white_name = match.white.name
+        if match.black is None:
+            player_scores[white_name]['score'] += 1.0
+            player_scores[white_name]['matches_played'] += 1
+        elif match.result:
+            player_scores[white_name]['matches_played'] += 1
+            black_name = match.black.name
+            player_scores[black_name]['matches_played'] += 1
+            if match.result == "1-0":
+                player_scores[white_name]['score'] += 1.0
+            elif match.result == "0-1":
+                player_scores[black_name]['score'] += 1.0
+            elif match.result == "0.5-0.5":
+                player_scores[white_name]['score'] += 0.5
+                player_scores[black_name]['score'] += 0.5
+
+    def _display_round_rankings(self, sorted_players, rating_name, round_number, rating_type):
+        print(f"\nRitmo do torneio: {rating_name}")
+        print(f"Rodadas contabilizadas: 1 até {round_number}")
+        print(f"\n{'='*80}")
+        print(f"RANKING APÓS {round_number}ª RODADA")
+        print(f"{'='*80}")
+        print(f"\nTotal de jogadores: {len(sorted_players)}\n")
+
+        for i, data in enumerate(sorted_players, 1):
+            player = data['player']
+            score = data['score']
+            matches = data['matches_played']
+            rating_value = getattr(player.rating, rating_type)
+            
+            print(f"{i}º lugar - {player.name}")
+            print(f"   Pontuação: {score:.1f} pontos ({matches} partidas)")
+            print(f"   Rating {rating_name}: {rating_value}")
+            print()
 
     def _list_tournament_players(self, tournament):
         """List all players registered in the tournament."""
@@ -705,76 +649,24 @@ class TournamentView(BaseView):
         self.display_separator()
 
         try:
-            # Check if tournament has players
             if len(tournament.players) < 2:
                 self.display_error("O torneio precisa de pelo menos 2 jogadores para gerar emparceiramentos.")
                 self.pause()
                 return
 
-            # Show tournament info
-            print(f"\nTorneio: {tournament.name}")
-            print(f"Tipo: {'Suíço' if isinstance(tournament, SwissTournament) else 'Eliminatório'}")
-            print(f"Ritmo: {tournament.time_control}")
-            print(f"Jogadores inscritos: {len(tournament.players)}")
+            self._display_tournament_summary(tournament)
 
-            # Get bracket info for eliminatory tournaments
             if isinstance(tournament, EliminatoryTournament):
-                bracket_info = self.controller.get_bracket_info(tournament.name)
-                print(f"\nEstrutura do bracket:")
-                print(f"  - Total de rodadas: {bracket_info['total_rounds']}")
-                print(f"  - Tamanho do bracket: {bracket_info['bracket_size']}")
-                if bracket_info['byes_in_first_round'] > 0:
-                    print(f"  - Byes na primeira rodada: {bracket_info['byes_in_first_round']}")
-                print(f"\nRodadas:")
-                for round_num, round_name in bracket_info['round_names'].items():
-                    print(f"  Rodada {round_num}: {round_name}")
+                self._display_bracket_info(tournament)
 
-            # Generate pairings
-            print("\n" + "="*60)
             confirm = self.get_input("\nGerar emparceiramento da próxima rodada? (S/N): ")
-
             if confirm.upper() != 'S':
                 self.display_message("Operação cancelada.")
                 self.pause()
                 return
 
-            round_number, pairings, tournament_obj = self.controller.generate_round_pairings(tournament.name)
-
-            # Display pairings
-            self.clear_screen()
-            self.display_separator()
-            
-            if isinstance(tournament, EliminatoryTournament):
-                bracket_info = self.controller.get_bracket_info(tournament.name)
-                round_name = bracket_info['round_names'].get(round_number, f"Rodada {round_number}")
-                print(f"    EMPARCEIRAMENTO - {round_name.upper()}")
-            else:
-                print(f"           EMPARCEIRAMENTO - RODADA {round_number}")
-            
-            self.display_separator()
-
-            print(f"\nTorneio: {tournament.name}")
-            print(f"Rodada: {round_number}")
-            print(f"Total de partidas: {len(pairings)}\n")
-
-            for i, (white, black) in enumerate(pairings, 1):
-                print(f"Mesa {i}:")
-                print(f"  Brancas: {white.name}")
-                if black is None:
-                    print(f"  Pretas: BYE (vitória automática)")
-                else:
-                    print(f"  Pretas: {black.name}")
-                print()
-
-            # Confirm save
-            print("="*60)
-            save_confirm = self.get_input("\nSalvar este emparceiramento? (S/N): ")
-
-            if save_confirm.upper() == 'S':
-                self.controller.save_round_pairings(tournament.name, round_number, pairings)
-                self.display_success(f"Emparceiramento da rodada {round_number} salvo com sucesso!")
-            else:
-                self.display_message("Emparceiramento não foi salvo.")
+            round_number, pairings, _ = self.controller.generate_round_pairings(tournament.name)
+            self._display_and_save_pairings(tournament, round_number, pairings)
 
         except ValueError as e:
             self.display_error(str(e))
@@ -782,6 +674,56 @@ class TournamentView(BaseView):
             self.display_error(f"Erro ao gerar emparceiramento: {str(e)}")
 
         self.pause()
+
+    def _display_tournament_summary(self, tournament):
+        print(f"\nTorneio: {tournament.name}")
+        print(f"Tipo: {'Suíço' if isinstance(tournament, SwissTournament) else 'Eliminatório'}")
+        print(f"Ritmo: {tournament.time_control}")
+        print(f"Jogadores inscritos: {len(tournament.players)}")
+
+    def _display_bracket_info(self, tournament):
+        bracket_info = self.controller.get_bracket_info(tournament.name)
+        print(f"\nEstrutura do bracket:")
+        print(f"  - Total de rodadas: {bracket_info['total_rounds']}")
+        print(f"  - Tamanho do bracket: {bracket_info['bracket_size']}")
+        if bracket_info['byes_in_first_round'] > 0:
+            print(f"  - Byes na primeira rodada: {bracket_info['byes_in_first_round']}")
+        print(f"\nRodadas:")
+        for round_num, round_name in bracket_info['round_names'].items():
+            print(f"  Rodada {round_num}: {round_name}")
+
+    def _display_and_save_pairings(self, tournament, round_number, pairings):
+        self.clear_screen()
+        self.display_separator()
+
+        if isinstance(tournament, EliminatoryTournament):
+            bracket_info = self.controller.get_bracket_info(tournament.name)
+            round_name = bracket_info['round_names'].get(round_number, f"Rodada {round_number}")
+            print(f"    EMPARCEIRAMENTO - {round_name.upper()}")
+        else:
+            print(f"           EMPARCEIRAMENTO - RODADA {round_number}")
+
+        self.display_separator()
+        print(f"\nTorneio: {tournament.name}")
+        print(f"Rodada: {round_number}")
+        print(f"Total de partidas: {len(pairings)}\n")
+
+        for i, (white, black) in enumerate(pairings, 1):
+            print(f"Mesa {i}:")
+            print(f"  Brancas: {white.name}")
+            if black is None:
+                print(f"  Pretas: BYE (vitória automática)")
+            else:
+                print(f"  Pretas: {black.name}")
+            print()
+
+        print("="*60)
+        save_confirm = self.get_input("\nSalvar este emparceiramento? (S/N): ")
+        if save_confirm.upper() == 'S':
+            self.controller.save_round_pairings(tournament.name, round_number, pairings)
+            self.display_success(f"Emparceiramento da rodada {round_number} salvo com sucesso!")
+        else:
+            self.display_message("Emparceiramento não foi salvo.")
 
     def _annotate_results(self, tournament):
         """Annotate results for matches in a specific round."""
@@ -791,146 +733,22 @@ class TournamentView(BaseView):
             print(f"       ANOTAR RESULTADOS: {tournament.name}")
             self.display_separator()
 
-            # Check if there are any rounds
-            if not tournament.rounds or len(tournament.rounds) == 0:
+            if not tournament.rounds:
                 self.display_error("Não há rodadas geradas neste torneio!")
                 self.pause()
                 return
 
-            # Let user select which round to annotate
-            print("\nRodadas disponíveis:")
-            for i, round_obj in enumerate(tournament.rounds, 1):
-                print(f"{i} - Rodada {round_obj.round_}")
-            
-            round_choice = self.get_input("\nQual rodada deseja anotar? (ou 0 para voltar): ")
-
-            if round_choice == '0':
+            round_number = self._get_round_to_annotate(tournament)
+            if round_number is None:
                 return
 
-            try:
-                round_index = int(round_choice) - 1
-                if round_index < 0 or round_index >= len(tournament.rounds):
-                    self.display_error("Rodada inválida!")
-                    self.pause()
-                    return
-            except ValueError:
-                self.display_error("Entrada inválida!")
-                self.pause()
-                return
-
-            round_number = tournament.rounds[round_index].round_
-
-            # Get matches for this round
             matches = self.controller.get_round_matches(tournament.name, round_number)
-
-            if not matches or len(matches) == 0:
+            if not matches:
                 self.display_error("Esta rodada não possui partidas!")
                 self.pause()
                 return
 
-            # Cursor-based result annotation
-            cursor_pos = 0
-
-            while True:
-                self.clear_screen()
-                self.display_separator()
-                print(f"       ANOTAR RESULTADOS - Rodada {round_number}")
-                self.display_separator()
-                print("\nComandos:")
-                print("  B - Brancas vencem (1-0)")
-                print("  P - Pretas vencem (0-1)")
-                print("  E - Empate (½-½)")
-                print("  Enter - Próxima partida")
-                print("  Q - Sair e salvar")
-                self.display_separator()
-
-                # Display all matches with cursor
-                for i, match in enumerate(matches):
-                    cursor = ">>>" if i == cursor_pos else "   "
-                    
-                    # Display result
-                    result_display = ""
-                    if match.result == "1-0":
-                        result_display = " [1-0]"
-                    elif match.result == "0-1":
-                        result_display = " [0-1]"
-                    elif match.result == "0.5-0.5":
-                        result_display = " [½-½]"
-                    else:
-                        result_display = " [ - ]"
-
-                    print(f"\n{cursor} Mesa {i+1}:{result_display}")
-                    print(f"    Brancas: {match.white.name}")
-                    if match.black is None:
-                        print(f"    Pretas: BYE (vitória automática)")
-                    else:
-                        print(f"    Pretas: {match.black.name}")
-
-                # Get user input
-                print("\n" + "="*60)
-                command = self.get_input("\nComando: ").upper()
-
-                if command == 'B':
-                    # White wins
-                    if matches[cursor_pos].black is None:
-                        self.display_error("Esta partida já é BYE (vitória automática)!")
-                        self.pause()
-                    else:
-                        self.controller.update_match_result(
-                            tournament.name, 
-                            round_number, 
-                            cursor_pos, 
-                            "1-0"
-                        )
-                        # Reload matches
-                        matches = self.controller.get_round_matches(tournament.name, round_number)
-                        cursor_pos = min(cursor_pos + 1, len(matches) - 1)
-
-                elif command == 'P':
-                    # Black wins
-                    if matches[cursor_pos].black is None:
-                        self.display_error("Esta partida é BYE - brancas vencem automaticamente!")
-                        self.pause()
-                    else:
-                        self.controller.update_match_result(
-                            tournament.name, 
-                            round_number, 
-                            cursor_pos, 
-                            "0-1"
-                        )
-                        # Reload matches
-                        matches = self.controller.get_round_matches(tournament.name, round_number)
-                        cursor_pos = min(cursor_pos + 1, len(matches) - 1)
-
-                elif command == 'E':
-                    # Draw
-                    if matches[cursor_pos].black is None:
-                        self.display_error("Esta partida é BYE - não pode haver empate!")
-                        self.pause()
-                    else:
-                        self.controller.update_match_result(
-                            tournament.name, 
-                            round_number, 
-                            cursor_pos, 
-                            "0.5-0.5"
-                        )
-                        # Reload matches
-                        matches = self.controller.get_round_matches(tournament.name, round_number)
-                        cursor_pos = min(cursor_pos + 1, len(matches) - 1)
-
-                elif command == '' or command == '\n':
-                    # Move to next match
-                    cursor_pos = (cursor_pos + 1) % len(matches)
-
-                elif command == 'Q':
-                    # Quit and save
-                    self.display_success("Resultados salvos com sucesso!")
-                    self.pause()
-                    break
-
-                else:
-                    self.display_error("Comando inválido!")
-                    self.pause()
+            self._annotate_matches_cursor_based(tournament, round_number, matches)
 
         except ValueError as e:
             self.display_error(str(e))
@@ -938,3 +756,90 @@ class TournamentView(BaseView):
         except Exception as e:
             self.display_error(f"Erro ao anotar resultados: {str(e)}")
             self.pause()
+
+    def _get_round_to_annotate(self, tournament):
+        print("\nRodadas disponíveis:")
+        for i, round_obj in enumerate(tournament.rounds, 1):
+            print(f"{i} - Rodada {round_obj.round_}")
+        
+        round_choice = self.get_input("\nQual rodada deseja anotar? (ou 0 para voltar): ")
+
+        if round_choice == '0':
+            return None
+
+        try:
+            round_index = int(round_choice) - 1
+            if 0 <= round_index < len(tournament.rounds):
+                return tournament.rounds[round_index].round_
+            else:
+                self.display_error("Rodada inválida!")
+                self.pause()
+                return None
+        except ValueError:
+            self.display_error("Entrada inválida!")
+            self.pause()
+            return None
+
+    def _annotate_matches_cursor_based(self, tournament, round_number, matches):
+        cursor_pos = 0
+        while True:
+            self.clear_screen()
+            self.display_separator()
+            print(f"       ANOTAR RESULTADOS - Rodada {round_number}")
+            self.display_separator()
+            print("\nComandos:")
+            print("  B - Brancas vencem (1-0)")
+            print("  P - Pretas vencem (0-1)")
+            print("  E - Empate (½-½)")
+            print("  Enter - Próxima partida")
+            print("  Q - Sair e salvar")
+            self.display_separator()
+
+            for i, match in enumerate(matches):
+                cursor = ">>>" if i == cursor_pos else "   "
+                result_display = self._get_result_display(match.result)
+                print(f"\n{cursor} Mesa {i+1}:{result_display}")
+                print(f"    Brancas: {match.white.name}")
+                if match.black is None:
+                    print(f"    Pretas: BYE (vitória automática)")
+                else:
+                    print(f"    Pretas: {match.black.name}")
+
+            command = self.get_input("\nComando: ").upper()
+
+            if command in ['B', 'P', 'E']:
+                self._update_match_result(tournament, round_number, cursor_pos, command, matches)
+                matches = self.controller.get_round_matches(tournament.name, round_number)
+                cursor_pos = min(cursor_pos + 1, len(matches) - 1)
+            elif command == '' or command == '\n':
+                cursor_pos = (cursor_pos + 1) % len(matches)
+            elif command == 'Q':
+                self.display_success("Resultados salvos com sucesso!")
+                self.pause()
+                break
+            else:
+                self.display_error("Comando inválido!")
+                self.pause()
+
+    def _get_result_display(self, result):
+        if result == "1-0":
+            return " [1-0]"
+        elif result == "0-1":
+            return " [0-1]"
+        elif result == "0.5-0.5":
+            return " [½-½]"
+        else:
+            return " [ - ]"
+
+    def _update_match_result(self, tournament, round_number, cursor_pos, command, matches):
+        result_map = {'B': "1-0", 'P': "0-1", 'E': "0.5-0.5"}
+        if matches[cursor_pos].black is None:
+            self.display_error("Esta partida já é BYE (vitória automática)!")
+            self.pause()
+        else:
+            self.controller.update_match_result(
+                tournament.name, 
+                round_number, 
+                cursor_pos, 
+                result_map[command]
+            )
