@@ -174,6 +174,36 @@ class TournamentView(BaseView):
             self.display_error(f"Erro ao gerenciar torneio: {str(e)}")
             self.pause()
 
+    def _can_generate_next_round(self, tournament) -> bool:
+        """
+        Check if the next round can be generated.
+        Returns True if there are no rounds or if all results from the last round are annotated.
+        
+        Args:
+            tournament: The tournament to check.
+            
+        Returns:
+            bool: True if next round can be generated, False otherwise.
+        """
+        # If no rounds exist, can generate first round
+        if not tournament.rounds or len(tournament.rounds) == 0:
+            return True
+        
+        # Get the last round
+        last_round = tournament.rounds[-1]
+        
+        # Check if all matches have results
+        for match in last_round.matches:
+            # BYE matches don't need results (white wins automatically)
+            if match.black is None:
+                continue
+            
+            # If any match doesn't have a result, can't generate next round
+            if match.result is None:
+                return False
+        
+        return True
+
     def _manage_tournament_menu(self, tournament):
         """Display management menu for a specific tournament."""
         while True:
@@ -186,11 +216,18 @@ class TournamentView(BaseView):
             print("3 - Remover jogador")
             print("4 - Ver ranking inicial")
             print("5 - Listar jogadores inscritos")
-            print(f"6 - Gerar emparceiramento ({tournament.get_current_round_number()}ª rodada)")
-            print("7 - Anotar resultados")
-            print("8 - Editar torneio")
-            print("9 - Excluir torneio")
-            print("10 - Voltar")
+            
+            # Check if next round can be generated
+            can_generate = self._can_generate_next_round(tournament)
+            
+            if can_generate:
+                print(f"6 - Gerar emparceiramento ({tournament.get_current_round_number()}ª rodada)")
+            else:
+                print(f"6 - Anotar resultados ({len(tournament.rounds)}ª rodada) - OBRIGATÓRIO")
+            
+            print("7 - Editar torneio")
+            print("8 - Excluir torneio")
+            print("9 - Voltar")
             self.display_separator()
 
             choice = self.get_input("\nEscolha uma opção: ")
@@ -210,20 +247,19 @@ class TournamentView(BaseView):
             elif choice == '5':
                 self._list_tournament_players(tournament)
             elif choice == '6':
-                self._generate_round_pairings(tournament)
+                if can_generate:
+                    self._generate_round_pairings(tournament)
+                else:
+                    self._annotate_results(tournament)
                 # Reload tournament to get updated data
                 tournament = self.controller.get_tournament_by_name(tournament.name)
             elif choice == '7':
-                self._annotate_results(tournament)
-                # Reload tournament to get updated data
-                tournament = self.controller.get_tournament_by_name(tournament.name)
-            elif choice == '8':
                 self._edit_tournament(tournament)
                 break
-            elif choice == '9':
+            elif choice == '8':
                 if self._delete_tournament(tournament):
                     break
-            elif choice == '10':
+            elif choice == '9':
                 break
             else:
                 self.display_error("Opção inválida!")
