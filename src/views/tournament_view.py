@@ -186,10 +186,11 @@ class TournamentView(BaseView):
             print("3 - Remover jogador")
             print("4 - Ver ranking inicial")
             print("5 - Listar jogadores inscritos")
-            print("6 - Gerar emparceiramento (próxima rodada)")
-            print("7 - Editar torneio")
-            print("8 - Excluir torneio")
-            print("9 - Voltar")
+            print(f"6 - Gerar emparceiramento ({tournament.get_current_round_number()}ª rodada)")
+            print("7 - Anotar resultados")
+            print("8 - Editar torneio")
+            print("9 - Excluir torneio")
+            print("10 - Voltar")
             self.display_separator()
 
             choice = self.get_input("\nEscolha uma opção: ")
@@ -213,12 +214,16 @@ class TournamentView(BaseView):
                 # Reload tournament to get updated data
                 tournament = self.controller.get_tournament_by_name(tournament.name)
             elif choice == '7':
+                self._annotate_results(tournament)
+                # Reload tournament to get updated data
+                tournament = self.controller.get_tournament_by_name(tournament.name)
+            elif choice == '8':
                 self._edit_tournament(tournament)
                 break
-            elif choice == '8':
+            elif choice == '9':
                 if self._delete_tournament(tournament):
                     break
-            elif choice == '9':
+            elif choice == '10':
                 break
             else:
                 self.display_error("Opção inválida!")
@@ -604,3 +609,158 @@ class TournamentView(BaseView):
 
         self.pause()
 
+    def _annotate_results(self, tournament):
+        """Annotate results for matches in a specific round."""
+        try:
+            self.clear_screen()
+            self.display_separator()
+            print(f"       ANOTAR RESULTADOS: {tournament.name}")
+            self.display_separator()
+
+            # Check if there are any rounds
+            if not tournament.rounds or len(tournament.rounds) == 0:
+                self.display_error("Não há rodadas geradas neste torneio!")
+                self.pause()
+                return
+
+            # Let user select which round to annotate
+            print("\nRodadas disponíveis:")
+            for i, round_obj in enumerate(tournament.rounds, 1):
+                print(f"{i} - Rodada {round_obj.round_}")
+            
+            round_choice = self.get_input("\nQual rodada deseja anotar? (ou 0 para voltar): ")
+
+            if round_choice == '0':
+                return
+
+            try:
+                round_index = int(round_choice) - 1
+                if round_index < 0 or round_index >= len(tournament.rounds):
+                    self.display_error("Rodada inválida!")
+                    self.pause()
+                    return
+            except ValueError:
+                self.display_error("Entrada inválida!")
+                self.pause()
+                return
+
+            round_number = tournament.rounds[round_index].round_
+
+            # Get matches for this round
+            matches = self.controller.get_round_matches(tournament.name, round_number)
+
+            if not matches or len(matches) == 0:
+                self.display_error("Esta rodada não possui partidas!")
+                self.pause()
+                return
+
+            # Cursor-based result annotation
+            cursor_pos = 0
+
+            while True:
+                self.clear_screen()
+                self.display_separator()
+                print(f"       ANOTAR RESULTADOS - Rodada {round_number}")
+                self.display_separator()
+                print("\nComandos:")
+                print("  B - Brancas vencem (1-0)")
+                print("  P - Pretas vencem (0-1)")
+                print("  E - Empate (½-½)")
+                print("  Enter - Próxima partida")
+                print("  Q - Sair e salvar")
+                self.display_separator()
+
+                # Display all matches with cursor
+                for i, match in enumerate(matches):
+                    cursor = ">>>" if i == cursor_pos else "   "
+                    
+                    # Display result
+                    result_display = ""
+                    if match.result == "1-0":
+                        result_display = " [1-0]"
+                    elif match.result == "0-1":
+                        result_display = " [0-1]"
+                    elif match.result == "0.5-0.5":
+                        result_display = " [½-½]"
+                    else:
+                        result_display = " [ - ]"
+
+                    print(f"\n{cursor} Mesa {i+1}:{result_display}")
+                    print(f"    Brancas: {match.white.name}")
+                    if match.black is None:
+                        print(f"    Pretas: BYE (vitória automática)")
+                    else:
+                        print(f"    Pretas: {match.black.name}")
+
+                # Get user input
+                print("\n" + "="*60)
+                command = self.get_input("\nComando: ").upper()
+
+                if command == 'B':
+                    # White wins
+                    if matches[cursor_pos].black is None:
+                        self.display_error("Esta partida já é BYE (vitória automática)!")
+                        self.pause()
+                    else:
+                        self.controller.update_match_result(
+                            tournament.name, 
+                            round_number, 
+                            cursor_pos, 
+                            "1-0"
+                        )
+                        # Reload matches
+                        matches = self.controller.get_round_matches(tournament.name, round_number)
+                        cursor_pos = min(cursor_pos + 1, len(matches) - 1)
+
+                elif command == 'P':
+                    # Black wins
+                    if matches[cursor_pos].black is None:
+                        self.display_error("Esta partida é BYE - brancas vencem automaticamente!")
+                        self.pause()
+                    else:
+                        self.controller.update_match_result(
+                            tournament.name, 
+                            round_number, 
+                            cursor_pos, 
+                            "0-1"
+                        )
+                        # Reload matches
+                        matches = self.controller.get_round_matches(tournament.name, round_number)
+                        cursor_pos = min(cursor_pos + 1, len(matches) - 1)
+
+                elif command == 'E':
+                    # Draw
+                    if matches[cursor_pos].black is None:
+                        self.display_error("Esta partida é BYE - não pode haver empate!")
+                        self.pause()
+                    else:
+                        self.controller.update_match_result(
+                            tournament.name, 
+                            round_number, 
+                            cursor_pos, 
+                            "0.5-0.5"
+                        )
+                        # Reload matches
+                        matches = self.controller.get_round_matches(tournament.name, round_number)
+                        cursor_pos = min(cursor_pos + 1, len(matches) - 1)
+
+                elif command == '' or command == '\n':
+                    # Move to next match
+                    cursor_pos = (cursor_pos + 1) % len(matches)
+
+                elif command == 'Q':
+                    # Quit and save
+                    self.display_success("Resultados salvos com sucesso!")
+                    self.pause()
+                    break
+
+                else:
+                    self.display_error("Comando inválido!")
+                    self.pause()
+
+        except ValueError as e:
+            self.display_error(str(e))
+            self.pause()
+        except Exception as e:
+            self.display_error(f"Erro ao anotar resultados: {str(e)}")
+            self.pause()

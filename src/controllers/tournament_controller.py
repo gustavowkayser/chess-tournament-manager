@@ -307,4 +307,63 @@ class TournamentController(BaseController):
         
         return tournament.get_bracket_info()
 
+    def get_round_matches(self, tournament_name: str, round_number: int) -> list:
+        """
+        Get all matches from a specific round.
+
+        Args:
+            tournament_name (str): The name of the tournament.
+            round_number (int): The round number.
+
+        Returns:
+            list: List of Game objects from the round.
+
+        Raises:
+            ValueError: If tournament or round is not found.
+        """
+        tournament = self.get_tournament_by_name(tournament_name)
+        
+        if tournament is None:
+            raise ValueError(f"Tournament '{tournament_name}' not found.")
+        
+        round_obj = tournament.get_round(round_number)
+        
+        if round_obj is None:
+            raise ValueError(f"Round {round_number} not found in tournament.")
+        
+        return round_obj.matches
+
+    def update_match_result(self, tournament_name: str, round_number: int, match_index: int, result: str) -> None:
+        """
+        Update the result of a specific match.
+
+        Args:
+            tournament_name (str): The name of the tournament.
+            round_number (int): The round number.
+            match_index (int): The index of the match in the round.
+            result (str): The result ('1-0', '0-1', or '0.5-0.5').
+
+        Raises:
+            ValueError: If tournament, round, or match is not found.
+        """
+        tournament = self.get_tournament_by_name(tournament_name)
+        
+        if tournament is None:
+            raise ValueError(f"Tournament '{tournament_name}' not found.")
+        
+        round_obj = tournament.get_round(round_number)
+        
+        if round_obj is None:
+            raise ValueError(f"Round {round_number} not found in tournament.")
+        
+        if match_index < 0 or match_index >= len(round_obj.matches):
+            raise ValueError(f"Match index {match_index} out of range.")
+        
+        # Update the result
+        round_obj.matches[match_index].result = result
+        
+        # Save updated tournament
+        self.update_tournament(tournament_name, tournament)
+
+
 
