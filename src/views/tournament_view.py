@@ -122,7 +122,7 @@ class TournamentView(BaseView):
                     
                     # Display type-specific information
                     if isinstance(tournament, SwissTournament):
-                        print(f"   Tipo: Suíço ({tournament.rounds} rodadas)")
+                        print(f"   Tipo: Suíço ({tournament.num_rounds} rodadas)")
                     elif isinstance(tournament, EliminatoryTournament):
                         print(f"   Tipo: Eliminatório")
                     else:
@@ -186,9 +186,10 @@ class TournamentView(BaseView):
             print("3 - Remover jogador")
             print("4 - Ver ranking inicial")
             print("5 - Listar jogadores inscritos")
-            print("6 - Editar torneio")
-            print("7 - Excluir torneio")
-            print("8 - Voltar")
+            print("6 - Gerar emparceiramento (próxima rodada)")
+            print("7 - Editar torneio")
+            print("8 - Excluir torneio")
+            print("9 - Voltar")
             self.display_separator()
 
             choice = self.get_input("\nEscolha uma opção: ")
@@ -208,16 +209,22 @@ class TournamentView(BaseView):
             elif choice == '5':
                 self._list_tournament_players(tournament)
             elif choice == '6':
+                self._generate_round_pairings(tournament)
+                # Reload tournament to get updated data
+                tournament = self.controller.get_tournament_by_name(tournament.name)
+            elif choice == '7':
                 self._edit_tournament(tournament)
                 break
-            elif choice == '7':
+            elif choice == '8':
                 if self._delete_tournament(tournament):
                     break
-            elif choice == '8':
+            elif choice == '9':
                 break
             else:
                 self.display_error("Opção inválida!")
                 self.pause()
+                # Reload tournament to get updated data
+                tournament = self.controller.get_tournament_by_name(tournament.name)
 
     def _view_tournament_details(self, tournament):
         """Display detailed information about a tournament."""
@@ -234,7 +241,7 @@ class TournamentView(BaseView):
         
         if isinstance(tournament, SwissTournament):
             print(f"Tipo: Torneio Suíço")
-            print(f"Número de rodadas: {tournament.rounds}")
+            print(f"Número de rodadas: {tournament.num_rounds}")
         elif isinstance(tournament, EliminatoryTournament):
             print(f"Tipo: Torneio Eliminatório")
         else:
@@ -275,8 +282,8 @@ class TournamentView(BaseView):
 
             # Update based on tournament type
             if isinstance(tournament, SwissTournament):
-                rounds_input = self.get_input(f"Número de rodadas [{tournament.rounds}]: ")
-                rounds = int(rounds_input) if rounds_input else tournament.rounds
+                rounds_input = self.get_input(f"Número de rodadas [{tournament.num_rounds}]: ")
+                rounds = int(rounds_input) if rounds_input else tournament.num_rounds
                 updated_tournament = SwissTournament(name, location, start_date, end_date, time_control, rounds)
             elif isinstance(tournament, EliminatoryTournament):
                 updated_tournament = EliminatoryTournament(name, location, start_date, end_date, time_control)
@@ -510,3 +517,90 @@ class TournamentView(BaseView):
             self.display_error(f"Erro ao listar jogadores: {str(e)}")
 
         self.pause()
+
+    def _generate_round_pairings(self, tournament):
+        """Generate and display pairings for the next round."""
+        self.clear_screen()
+        self.display_separator()
+        print("           GERAR EMPARCEIRAMENTO")
+        self.display_separator()
+
+        try:
+            # Check if tournament has players
+            if len(tournament.players) < 2:
+                self.display_error("O torneio precisa de pelo menos 2 jogadores para gerar emparceiramentos.")
+                self.pause()
+                return
+
+            # Show tournament info
+            print(f"\nTorneio: {tournament.name}")
+            print(f"Tipo: {'Suíço' if isinstance(tournament, SwissTournament) else 'Eliminatório'}")
+            print(f"Ritmo: {tournament.time_control}")
+            print(f"Jogadores inscritos: {len(tournament.players)}")
+
+            # Get bracket info for eliminatory tournaments
+            if isinstance(tournament, EliminatoryTournament):
+                bracket_info = self.controller.get_bracket_info(tournament.name)
+                print(f"\nEstrutura do bracket:")
+                print(f"  - Total de rodadas: {bracket_info['total_rounds']}")
+                print(f"  - Tamanho do bracket: {bracket_info['bracket_size']}")
+                if bracket_info['byes_in_first_round'] > 0:
+                    print(f"  - Byes na primeira rodada: {bracket_info['byes_in_first_round']}")
+                print(f"\nRodadas:")
+                for round_num, round_name in bracket_info['round_names'].items():
+                    print(f"  Rodada {round_num}: {round_name}")
+
+            # Generate pairings
+            print("\n" + "="*60)
+            confirm = self.get_input("\nGerar emparceiramento da próxima rodada? (S/N): ")
+
+            if confirm.upper() != 'S':
+                self.display_message("Operação cancelada.")
+                self.pause()
+                return
+
+            round_number, pairings, tournament_obj = self.controller.generate_round_pairings(tournament.name)
+
+            # Display pairings
+            self.clear_screen()
+            self.display_separator()
+            
+            if isinstance(tournament, EliminatoryTournament):
+                bracket_info = self.controller.get_bracket_info(tournament.name)
+                round_name = bracket_info['round_names'].get(round_number, f"Rodada {round_number}")
+                print(f"    EMPARCEIRAMENTO - {round_name.upper()}")
+            else:
+                print(f"           EMPARCEIRAMENTO - RODADA {round_number}")
+            
+            self.display_separator()
+
+            print(f"\nTorneio: {tournament.name}")
+            print(f"Rodada: {round_number}")
+            print(f"Total de partidas: {len(pairings)}\n")
+
+            for i, (white, black) in enumerate(pairings, 1):
+                print(f"Mesa {i}:")
+                print(f"  Brancas: {white.name}")
+                if black is None:
+                    print(f"  Pretas: BYE (vitória automática)")
+                else:
+                    print(f"  Pretas: {black.name}")
+                print()
+
+            # Confirm save
+            print("="*60)
+            save_confirm = self.get_input("\nSalvar este emparceiramento? (S/N): ")
+
+            if save_confirm.upper() == 'S':
+                self.controller.save_round_pairings(tournament.name, round_number, pairings)
+                self.display_success(f"Emparceiramento da rodada {round_number} salvo com sucesso!")
+            else:
+                self.display_message("Emparceiramento não foi salvo.")
+
+        except ValueError as e:
+            self.display_error(str(e))
+        except Exception as e:
+            self.display_error(f"Erro ao gerar emparceiramento: {str(e)}")
+
+        self.pause()
+

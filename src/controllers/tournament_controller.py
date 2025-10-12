@@ -207,3 +207,104 @@ class TournamentController(BaseController):
         
         return tournament.get_players_by_rating(rating_type)
 
+    def generate_round_pairings(self, tournament_name: str) -> tuple:
+        """
+        Generate pairings for the next round of a tournament.
+
+        Args:
+            tournament_name (str): The name of the tournament.
+
+        Returns:
+            tuple: (round_number, pairings_list, tournament_object)
+
+        Raises:
+            ValueError: If tournament is not found or pairings cannot be generated.
+        """
+        tournament = self.get_tournament_by_name(tournament_name)
+        
+        if tournament is None:
+            raise ValueError(f"Tournament '{tournament_name}' not found.")
+        
+        if len(tournament.players) < 2:
+            raise ValueError("At least 2 players are required to generate pairings.")
+        
+        round_number = tournament.get_current_round_number()
+        
+        # Generate pairings based on tournament type
+        if isinstance(tournament, SwissTournament):
+            if round_number > tournament.num_rounds:
+                raise ValueError(f"Tournament has only {tournament.num_rounds} rounds. All rounds completed.")
+            pairings = tournament.generate_swiss_pairings(round_number)
+        elif isinstance(tournament, EliminatoryTournament):
+            bracket_info = tournament.get_bracket_info()
+            if round_number > bracket_info['total_rounds']:
+                raise ValueError(f"Tournament bracket complete. All {bracket_info['total_rounds']} rounds finished.")
+            pairings = tournament.generate_bracket_pairings(round_number)
+        else:
+            raise ValueError("Pairing generation not supported for basic tournaments.")
+        
+        return (round_number, pairings, tournament)
+
+    def save_round_pairings(self, tournament_name: str, round_number: int, pairings: list) -> None:
+        """
+        Save the pairings for a round to the tournament.
+
+        Args:
+            tournament_name (str): The name of the tournament.
+            round_number (int): The round number.
+            pairings (list): List of tuples (white_player, black_player).
+
+        Raises:
+            ValueError: If tournament is not found or save fails.
+        """
+        from src.entities.round import Round
+        from src.entities.game import Game
+        
+        tournament = self.get_tournament_by_name(tournament_name)
+        
+        if tournament is None:
+            raise ValueError(f"Tournament '{tournament_name}' not found.")
+        
+        # Create Round object
+        round_obj = Round(round_number)
+        
+        # Add games to round
+        for white, black in pairings:
+            if black is None:
+                # Bye - create a game with None as black player
+                game = Game(white, white)  # Using same player as placeholder for bye
+                game.result = "1-0"  # Bye automatically wins
+            else:
+                game = Game(white, black)
+            round_obj.add_match(game)
+        
+        # Add round to tournament
+        tournament.add_round(round_obj)
+        
+        # Save updated tournament
+        self.update_tournament(tournament_name, tournament)
+
+    def get_bracket_info(self, tournament_name: str) -> dict:
+        """
+        Get bracket information for an eliminatory tournament.
+
+        Args:
+            tournament_name (str): The name of the tournament.
+
+        Returns:
+            dict: Bracket information.
+
+        Raises:
+            ValueError: If tournament is not found or not eliminatory.
+        """
+        tournament = self.get_tournament_by_name(tournament_name)
+        
+        if tournament is None:
+            raise ValueError(f"Tournament '{tournament_name}' not found.")
+        
+        if not isinstance(tournament, EliminatoryTournament):
+            raise ValueError("Bracket information is only available for eliminatory tournaments.")
+        
+        return tournament.get_bracket_info()
+
+

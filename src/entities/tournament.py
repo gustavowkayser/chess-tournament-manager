@@ -145,3 +145,45 @@ class Tournament:
             key=lambda p: getattr(p.rating, rating_type),
             reverse=True
         )
+
+    @property
+    def rounds(self) -> list:
+        """Get the list of rounds in the tournament."""
+        return self.__rounds.copy()
+
+    def add_round(self, round_obj):
+        """
+        Add a round to the tournament.
+
+        Args:
+            round_obj: The Round object to add.
+        """
+        from src.entities.round import Round
+        if not isinstance(round_obj, Round):
+            raise ValueError("Only Round objects can be added to the tournament.")
+        self.__rounds.append(round_obj)
+
+    def get_round(self, round_number: int):
+        """
+        Get a specific round by its number.
+
+        Args:
+            round_number (int): The round number to retrieve.
+
+        Returns:
+            Round or None: The Round object if found, None otherwise.
+        """
+        for round_obj in self.__rounds:
+            if round_obj.round_ == round_number:
+                return round_obj
+        return None
+
+    def get_current_round_number(self) -> int:
+        """
+        Get the current round number (last completed round + 1).
+
+        Returns:
+            int: The current round number.
+        """
+        return len(self.__rounds) + 1
+

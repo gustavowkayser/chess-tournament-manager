@@ -50,3 +50,24 @@ class Round:
         if not isinstance(value, list):
             raise ValueError("Matches must be a list.")
         self.__matches = value
+
+    def add_match(self, game):
+        """
+        Add a match (game) to the round.
+
+        Args:
+            game: The Game object to add.
+        """
+        from src.entities.game import Game
+        if not isinstance(game, Game):
+            raise ValueError("Only Game objects can be added as matches.")
+        self.__matches.append(game)
+
+    def get_match_count(self) -> int:
+        """
+        Get the number of matches in this round.
+
+        Returns:
+            int: Number of matches.
+        """
+        return len(self.__matches)

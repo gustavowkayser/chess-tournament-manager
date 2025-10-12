@@ -31,7 +31,7 @@ class TournamentDTO:
         # Add type-specific information
         if isinstance(tournament, SwissTournament):
             data["type"] = "swiss"
-            data["rounds"] = tournament.rounds
+            data["rounds"] = tournament.num_rounds
         elif isinstance(tournament, EliminatoryTournament):
             data["type"] = "eliminatory"
         else:
