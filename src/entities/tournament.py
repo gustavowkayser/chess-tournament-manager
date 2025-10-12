@@ -1,9 +1,10 @@
 from src.utils.decorators import type_check
+from src.entities.time_control import TimeControl
 
 class Tournament:
     """Class representing a chess tournament."""
     @type_check
-    def __init__(self, name: str, location: str, start_date: str, end_date: str):
+    def __init__(self, name: str, location: str, start_date: str, end_date: str, time_control: TimeControl):
         """
         Initialize a Tournament instance.
 
@@ -12,11 +13,13 @@ class Tournament:
             location (str): The location of the tournament.
             start_date (str): The start date of the tournament in 'YYYY-MM-DD' format.
             end_date (str): The end date of the tournament in 'YYYY-MM-DD' format.
+            time_control (TimeControl): The time control of the tournament.
         """
         self.__name = name
         self.__location = location
         self.__start_date = start_date
         self.__end_date = end_date
+        self.__time_control = time_control
 
         self.__players = []  # List to hold players participating in the tournament
         self.__rounds = []   # List to hold rounds in the tournament
@@ -70,6 +73,18 @@ class Tournament:
         if not isinstance(value, str) or len(value) != 10 or value[4] != '-' or value[7] != '-':
             raise ValueError("End date must be a string in 'YYYY-MM-DD' format.")
         self.__end_date = value
+
+    @property
+    def time_control(self) -> TimeControl:
+        """Get the tournament's time control."""
+        return self.__time_control
+    
+    @time_control.setter
+    def time_control(self, value: TimeControl):
+        """Set the tournament's time control."""
+        if not isinstance(value, TimeControl):
+            raise ValueError("Time control must be a TimeControl enum.")
+        self.__time_control = value
 
     @property
     def players(self) -> list:

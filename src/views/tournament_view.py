@@ -3,6 +3,7 @@ from src.controllers.tournament_controller import TournamentController
 from src.controllers.player_controller import PlayerController
 from src.entities.swiss_tournament import SwissTournament
 from src.entities.eliminatory_tournament import EliminatoryTournament
+from src.entities.time_control import TimeControl
 
 
 class TournamentView(BaseView):
@@ -53,6 +54,25 @@ class TournamentView(BaseView):
             start_date = self.get_input("Data de início (YYYY-MM-DD): ")
             end_date = self.get_input("Data de término (YYYY-MM-DD): ")
 
+            # Select time control
+            print("\nRitmo de jogo:")
+            print("1 - Clássico")
+            print("2 - Rápido")
+            print("3 - Blitz")
+            time_control_choice = self.get_input("\nEscolha o ritmo: ")
+
+            time_control_map = {
+                '1': TimeControl.CLASSIC,
+                '2': TimeControl.RAPID,
+                '3': TimeControl.BLITZ
+            }
+
+            time_control = time_control_map.get(time_control_choice)
+            if time_control is None:
+                self.display_error("Ritmo de jogo inválido!")
+                self.pause()
+                return
+
             # Select tournament type
             print("\nTipo de torneio:")
             print("1 - Torneio Suíço")
@@ -62,10 +82,10 @@ class TournamentView(BaseView):
             if tournament_type == '1':
                 # Swiss tournament
                 rounds = int(self.get_input("Número de rodadas: "))
-                tournament = SwissTournament(name, location, start_date, end_date, rounds)
+                tournament = SwissTournament(name, location, start_date, end_date, time_control, rounds)
             elif tournament_type == '2':
                 # Eliminatory tournament
-                tournament = EliminatoryTournament(name, location, start_date, end_date)
+                tournament = EliminatoryTournament(name, location, start_date, end_date, time_control)
             else:
                 self.display_error("Tipo de torneio inválido!")
                 self.pause()
@@ -98,6 +118,7 @@ class TournamentView(BaseView):
                     print(f"{i}. {tournament.name}")
                     print(f"   Local: {tournament.location}")
                     print(f"   Data: {tournament.start_date} a {tournament.end_date}")
+                    print(f"   Ritmo: {tournament.time_control}")
                     
                     # Display type-specific information
                     if isinstance(tournament, SwissTournament):
@@ -209,6 +230,7 @@ class TournamentView(BaseView):
         print(f"Local: {tournament.location}")
         print(f"Data de início: {tournament.start_date}")
         print(f"Data de término: {tournament.end_date}")
+        print(f"Ritmo de jogo: {tournament.time_control}")
         
         if isinstance(tournament, SwissTournament):
             print(f"Tipo: Torneio Suíço")
@@ -236,16 +258,35 @@ class TournamentView(BaseView):
             start_date = self.get_input(f"Data de início [{tournament.start_date}]: ") or tournament.start_date
             end_date = self.get_input(f"Data de término [{tournament.end_date}]: ") or tournament.end_date
 
+            # Time control selection
+            print(f"\nRitmo de jogo atual: {tournament.time_control}")
+            print("Deixe em branco para manter, ou escolha:")
+            print("1 - Clássico")
+            print("2 - Rápido")
+            print("3 - Blitz")
+            time_control_input = self.get_input("Nova escolha: ")
+            
+            time_control_map = {
+                '1': TimeControl.CLASSIC,
+                '2': TimeControl.RAPID,
+                '3': TimeControl.BLITZ
+            }
+            time_control = time_control_map.get(time_control_input, tournament.time_control)
+
             # Update based on tournament type
             if isinstance(tournament, SwissTournament):
                 rounds_input = self.get_input(f"Número de rodadas [{tournament.rounds}]: ")
                 rounds = int(rounds_input) if rounds_input else tournament.rounds
-                updated_tournament = SwissTournament(name, location, start_date, end_date, rounds)
+                updated_tournament = SwissTournament(name, location, start_date, end_date, time_control, rounds)
             elif isinstance(tournament, EliminatoryTournament):
-                updated_tournament = EliminatoryTournament(name, location, start_date, end_date)
+                updated_tournament = EliminatoryTournament(name, location, start_date, end_date, time_control)
             else:
                 from src.entities.tournament import Tournament
-                updated_tournament = Tournament(name, location, start_date, end_date)
+                updated_tournament = Tournament(name, location, start_date, end_date, time_control)
+
+            # Copy players from old tournament to updated tournament
+            for player in tournament.players:
+                updated_tournament.add_player(player)
 
             self.controller.update_tournament(old_name, updated_tournament)
             self.display_success(f"Torneio '{name}' atualizado com sucesso!")
@@ -402,17 +443,27 @@ class TournamentView(BaseView):
                 self.pause()
                 return
 
-            # Ask which rating type to use for ranking
-            print("\nTipo de rating para o ranking:")
-            print("1 - Clássico")
-            print("2 - Rápido")
-            print("3 - Blitz")
+            # Use the tournament's time control for ranking
+            rating_type = tournament.time_control.value
+            rating_name = str(tournament.time_control)
+
+            print(f"\nRitmo do torneio: {rating_name}")
+            print(f"O ranking será baseado no rating {rating_name}\n")
+
+            # Allow user to choose a different rating if desired
+            use_tournament_rating = self.get_input("Deseja usar um rating diferente? (S/N): ")
             
-            rating_choice = self.get_input("\nEscolha o tipo: ")
-            
-            rating_map = {'1': 'classic', '2': 'rapid', '3': 'blitz'}
-            rating_type = rating_map.get(rating_choice, 'classic')
-            rating_name = {'classic': 'Clássico', 'rapid': 'Rápido', 'blitz': 'Blitz'}[rating_type]
+            if use_tournament_rating.upper() == 'S':
+                print("\nTipo de rating para o ranking:")
+                print("1 - Clássico")
+                print("2 - Rápido")
+                print("3 - Blitz")
+                
+                rating_choice = self.get_input("\nEscolha o tipo: ")
+                
+                rating_map = {'1': 'classic', '2': 'rapid', '3': 'blitz'}
+                rating_type = rating_map.get(rating_choice, rating_type)
+                rating_name = {'classic': 'Clássico', 'rapid': 'Rápido', 'blitz': 'Blitz'}[rating_type]
 
             ranked_players = self.controller.get_tournament_ranking(tournament.name, rating_type)
 
